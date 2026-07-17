@@ -15,7 +15,7 @@ export default function MetricsSimVariables({ detail }: { detail: SimulationDeta
       {items.map((item) => (
         <div
           key={item.label}
-          className="rounded-lg border border-slate-200 bg-white p-3 text-left"
+          className="rounded-lg border border-slate-200 bg-brand-bg p-3 text-left"
         >
           <p className="text-xs uppercase tracking-wide text-slate-400">{item.label}</p>
           <p className="text-lg font-semibold text-slate-800">{item.value}</p>

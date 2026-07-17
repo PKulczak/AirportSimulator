@@ -7,7 +7,7 @@ import type { RunwayStat, SimulationDetail } from '../types/metrics';
 export default function MetricsRunways({ detail }: { detail: SimulationDetail }) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-left">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 text-left">
         <h2 className="text-lg font-semibold text-slate-800 mb-3">Runway stats</h2>
         <DataTable value={detail.runwayStats} emptyMessage="No runway data">
           <Column field="identifier" header="Runway" />
@@ -29,7 +29,7 @@ export default function MetricsRunways({ detail }: { detail: SimulationDetail })
       </div>
 
       {detail.includeClosures && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-left">
+        <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 text-left">
           <h2 className="text-lg font-semibold text-slate-800 mb-3">Closure events</h2>
           <p className="text-sm text-slate-600">
             {detail.closureEventCount > 0
@@ -38,7 +38,7 @@ export default function MetricsRunways({ detail }: { detail: SimulationDetail })
             {detail.closureEventCount > 0 && (
               <Link
                 to={`/simulation/${detail.id}/visualisation`}
-                className="text-blue-600 hover:underline"
+                className="text-black underline decoration-brand-accent decoration-2 hover:decoration-brand-accent-hover"
               >
                 View them in the replay &rarr;
               </Link>

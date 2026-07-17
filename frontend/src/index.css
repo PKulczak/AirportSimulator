@@ -3,6 +3,19 @@
 @import "primereact/resources/primereact.min.css";
 @import "primeicons/primeicons.css";
 
+/* Site theme: cream background, golden-amber secondary/accent, black text
+ * throughout. `--color-brand-*` become Tailwind utilities (bg-brand-bg,
+ * text-brand-accent, etc.) for use in our own components. */
+@theme {
+  /* General page background: white with a barely-there warm/cream hue. */
+  --color-brand-page: #fffaf0;
+  /* Panel/card background. */
+  --color-brand-bg: #fee6b6;
+  --color-brand-accent: #fdc261;
+  --color-brand-accent-hover: #f0ae3e;
+  --color-brand-accent-active: #e0992a;
+}
+
 :root {
   color-scheme: light;
 }
@@ -16,4 +29,96 @@ body,
 body {
   margin: 0;
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  color: #000000;
+  background: var(--color-brand-page);
+}
+
+/* --------------------------------------------------------------------
+ * Re-theme PrimeReact's built-in blue accent (#3b82f6 and friends) to the
+ * site's secondary colour. This theme build (lara-light-blue) bakes colours
+ * in as literal hex values rather than CSS custom properties, so re-theming
+ * means overriding the specific component rules below rather than a single
+ * root variable. Text stays black throughout, per the site's theme.
+ * -------------------------------------------------------------------- */
+
+.p-button {
+  color: #000000;
+  background: var(--color-brand-accent);
+  border-color: var(--color-brand-accent);
+}
+.p-button:not(:disabled):hover {
+  background: var(--color-brand-accent-hover);
+  border-color: var(--color-brand-accent-hover);
+  color: #000000;
+}
+.p-button:not(:disabled):active {
+  background: var(--color-brand-accent-active);
+  border-color: var(--color-brand-accent-active);
+  color: #000000;
+}
+.p-button.p-button-outlined {
+  color: #000000;
+  border-color: var(--color-brand-accent);
+}
+.p-button.p-button-outlined:not(:disabled):hover {
+  background: color-mix(in srgb, var(--color-brand-accent) 15%, transparent);
+  color: #000000;
+  border-color: var(--color-brand-accent);
+}
+.p-button.p-button-outlined:not(:disabled):active {
+  background: color-mix(in srgb, var(--color-brand-accent) 28%, transparent);
+  color: #000000;
+  border-color: var(--color-brand-accent);
+}
+
+.p-slider .p-slider-handle {
+  border-color: var(--color-brand-accent);
+}
+.p-slider .p-slider-range,
+.p-slider:not(.p-disabled) .p-slider-handle:hover {
+  background: var(--color-brand-accent);
+  border-color: var(--color-brand-accent);
+}
+
+.p-progressbar .p-progressbar-value {
+  background: var(--color-brand-accent);
+}
+
+.p-selectbutton .p-button.p-highlight,
+.p-selectbutton .p-button.p-highlight .p-button-icon-left,
+.p-selectbutton .p-button.p-highlight .p-button-icon-right {
+  color: #000000;
+}
+.p-selectbutton .p-button.p-highlight {
+  background: var(--color-brand-accent);
+  border-color: var(--color-brand-accent);
+}
+.p-selectbutton .p-button.p-highlight:hover {
+  background: var(--color-brand-accent-hover);
+  border-color: var(--color-brand-accent-hover);
+}
+
+.p-checkbox.p-highlight .p-checkbox-box {
+  border-color: var(--color-brand-accent);
+  background: var(--color-brand-accent);
+}
+.p-inputswitch.p-highlight .p-inputswitch-slider {
+  background: var(--color-brand-accent);
+}
+
+.p-paginator .p-paginator-pages .p-paginator-page.p-highlight,
+.p-dropdown-panel .p-dropdown-items .p-dropdown-item.p-highlight,
+.p-datatable .p-datatable-tbody > tr.p-highlight {
+  background: var(--color-brand-bg);
+  border-color: var(--color-brand-bg);
+  color: #000000;
+}
+
+/* Panel-style overlays (creation dialog, event log sidebar) use the same
+ * panel background as everything else. */
+.p-dialog .p-dialog-header,
+.p-dialog .p-dialog-content,
+.p-sidebar {
+  background: var(--color-brand-bg);
+  color: #000000;
 }

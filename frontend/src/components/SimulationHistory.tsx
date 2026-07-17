@@ -54,7 +54,7 @@ export default function SimulationHistory() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-slate-800">Simulation history</h1>
         <div className="flex items-center gap-2">
           <Button
@@ -72,61 +72,63 @@ export default function SimulationHistory() {
         </div>
       </div>
 
-      <InputText
-        value={searchInput}
-        onChange={(e) => setSearchInput(e.target.value)}
-        placeholder="Search by name..."
-        className="w-full max-w-sm"
-      />
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
+        <InputText
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search by name..."
+          className="w-full max-w-sm"
+        />
 
-      {error && (
-        <p className="text-red-600">Failed to load simulations: {error.message}</p>
-      )}
+        {error && (
+          <p className="text-red-600">Failed to load simulations: {error.message}</p>
+        )}
 
-      <DataTable
-        value={data?.results ?? []}
-        loading={loading}
-        lazy
-        paginator
-        first={(page - 1) * PAGE_SIZE}
-        rows={PAGE_SIZE}
-        totalRecords={data?.count ?? 0}
-        onPage={onPage}
-        onRowClick={(e) => navigate(`/simulation/${(e.data as Simulation).id}/detail`)}
-        rowHover
-        className="cursor-pointer"
-        emptyMessage="No simulations yet"
-      >
-        <Column field="name" header="Name" />
-        <Column
-          field="status"
-          header="Status"
-          body={(row: Simulation) => (
-            <Tag value={row.status} severity={STATUS_SEVERITY[row.status]} />
-          )}
-        />
-        <Column field="arrivalRatePerHour" header="Arrivals/hr" />
-        <Column field="departureRatePerHour" header="Departures/hr" />
-        <Column field="durationMinutes" header="Duration (min)" />
-        <Column
-          field="createdAt"
-          header="Created"
-          body={(row: Simulation) => new Date(row.createdAt).toLocaleString()}
-        />
-        <Column
-          header="Replay"
-          body={(row: Simulation) => (
-            <Button
-              text
-              icon={<FontAwesomeIcon icon={faChartLine} />}
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/simulation/${row.id}/visualisation`);
-              }}
-            />
-          )}
-        />
-      </DataTable>
+        <DataTable
+          value={data?.results ?? []}
+          loading={loading}
+          lazy
+          paginator
+          first={(page - 1) * PAGE_SIZE}
+          rows={PAGE_SIZE}
+          totalRecords={data?.count ?? 0}
+          onPage={onPage}
+          onRowClick={(e) => navigate(`/simulation/${(e.data as Simulation).id}/detail`)}
+          rowHover
+          className="cursor-pointer"
+          emptyMessage="No simulations yet"
+        >
+          <Column field="name" header="Name" />
+          <Column
+            field="status"
+            header="Status"
+            body={(row: Simulation) => (
+              <Tag value={row.status} severity={STATUS_SEVERITY[row.status]} />
+            )}
+          />
+          <Column field="arrivalRatePerHour" header="Arrivals/hr" />
+          <Column field="departureRatePerHour" header="Departures/hr" />
+          <Column field="durationMinutes" header="Duration (min)" />
+          <Column
+            field="createdAt"
+            header="Created"
+            body={(row: Simulation) => new Date(row.createdAt).toLocaleString()}
+          />
+          <Column
+            header="Replay"
+            body={(row: Simulation) => (
+              <Button
+                text
+                icon={<FontAwesomeIcon icon={faChartLine} />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/simulation/${row.id}/visualisation`);
+                }}
+              />
+            )}
+          />
+        </DataTable>
+      </div>
 
       <SimulationFormDialog
         visible={dialogVisible}

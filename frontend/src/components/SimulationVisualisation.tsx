@@ -4,6 +4,7 @@ import { Slider, type SliderChangeEvent } from 'primereact/slider';
 import { SelectButton, type SelectButtonChangeEvent } from 'primereact/selectbutton';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
+import { Sidebar } from 'primereact/sidebar';
 import { useGet } from '../functions/axios';
 import { useRunways } from '../context/RunwayContext';
 import {
@@ -139,7 +140,7 @@ export default function SimulationVisualisation() {
 
   if (!data) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
         <h1 className="text-2xl font-semibold text-slate-800">{raw.name}</h1>
         <Message
           severity={raw.status === 'Error' ? 'error' : 'info'}
@@ -165,7 +166,7 @@ export default function SimulationVisualisation() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-800">{data.name}</h1>
           <p className="text-sm text-slate-500">
@@ -175,7 +176,7 @@ export default function SimulationVisualisation() {
         <AlertButton active={emergencyInWindow} />
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 flex flex-col gap-4">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <Button
             icon={isPlaying ? 'pi pi-pause' : 'pi pi-play'}
@@ -237,9 +238,7 @@ export default function SimulationVisualisation() {
         })}
       </div>
 
-      <div
-        className={`grid grid-cols-1 gap-6 ${showEventLog ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}
-      >
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <QueueTable
           events={events}
           currentTime={currentTime}
@@ -252,14 +251,20 @@ export default function SimulationVisualisation() {
           aircraft={data.aircraft}
           movementType="Departure"
         />
-        {showEventLog && (
-          <SimulationEventLog
-            events={visibleEvents}
-            aircraft={data.aircraft}
-            runwayIdentifier={runwayIdentifier}
-          />
-        )}
       </div>
+
+      <Sidebar
+        visible={showEventLog}
+        onHide={() => setShowEventLog(false)}
+        position="right"
+        className="w-full sm:w-[28rem]"
+      >
+        <SimulationEventLog
+          events={visibleEvents}
+          aircraft={data.aircraft}
+          runwayIdentifier={runwayIdentifier}
+        />
+      </Sidebar>
     </div>
   );
 }

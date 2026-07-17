@@ -70,7 +70,7 @@ export default function Runway({
   return (
     <div
       className={`rounded-lg border p-4 flex flex-col gap-2 ${
-        closed ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'
+        closed ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-brand-bg'
       }`}
     >
       <div className="flex items-center justify-between">
@@ -88,7 +88,7 @@ export default function Runway({
           <div className="h-3 rounded bg-slate-100 overflow-hidden">
             <div
               ref={barRef}
-              className={`h-3 rounded ${occupancy ? 'bg-blue-500' : 'bg-transparent'}`}
+              className={`h-3 rounded ${occupancy ? 'bg-brand-accent' : 'bg-transparent'}`}
               style={{ width: '0%' }}
             />
           </div>

@@ -21,7 +21,7 @@ export default function MetricBasePage() {
 
   if (error) {
     return (
-      <div className="flex flex-col gap-3">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-3">
         <Message severity="error" text={`Failed to load simulation: ${error.message}`} />
         <Button label="Retry" onClick={() => refetch()} className="self-start" />
       </div>
@@ -34,7 +34,7 @@ export default function MetricBasePage() {
 
   if (!isDetailComplete(data)) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
         <h1 className="text-2xl font-semibold text-slate-800">{data.name}</h1>
         <Message
           severity={data.status === 'Error' ? 'error' : 'info'}
@@ -66,7 +66,7 @@ export default function MetricBasePage() {
       <MetricsRunways detail={data} />
       <Link
         to={`/simulation/${data.id}/visualisation`}
-        className="self-start text-blue-600 hover:underline"
+        className="self-start text-black underline decoration-brand-accent decoration-2 hover:decoration-brand-accent-hover"
       >
         View full replay &rarr;
       </Link>

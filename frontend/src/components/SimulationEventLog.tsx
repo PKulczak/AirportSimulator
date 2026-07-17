@@ -74,13 +74,13 @@ export default function SimulationEventLog({
   };
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 text-left flex flex-col gap-2">
+    <div className="h-full text-left flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-800">Event log</h2>
         {userScrolledAway && (
           <button
             type="button"
-            className="text-xs text-blue-600 hover:underline"
+            className="text-xs text-black underline decoration-brand-accent decoration-2 hover:decoration-brand-accent-hover"
             onClick={() => setUserScrolledAway(false)}
           >
             Jump to latest
@@ -90,7 +90,7 @@ export default function SimulationEventLog({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="h-72 overflow-y-auto flex flex-col gap-1 text-sm"
+        className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 text-sm"
       >
         {reversed.length === 0 && <p className="text-slate-400">No events yet</p>}
         {reversed.map((event) => (

@@ -12,7 +12,7 @@ export default function AlertButton({ active }: AlertButtonProps) {
       className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
         active
           ? 'border-red-300 bg-red-50 text-red-600 animate-pulse'
-          : 'border-slate-200 bg-white text-slate-400'
+          : 'border-slate-200 bg-brand-bg text-slate-400'
       }`}
     >
       <FontAwesomeIcon icon={faTriangleExclamation} />

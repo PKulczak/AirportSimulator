@@ -14,7 +14,7 @@ export default function MetricsGrid({ detail }: { detail: SimulationDetail }) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-left">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 text-left">
         <h2 className="text-lg font-semibold text-slate-800 mb-3">Success rate</h2>
         <ProgressBar value={Math.round(successRate)} />
         <p className="mt-2 text-sm text-slate-500">
@@ -22,7 +22,7 @@ export default function MetricsGrid({ detail }: { detail: SimulationDetail }) {
         </p>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-left">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 text-left">
         <h2 className="text-lg font-semibold text-slate-800 mb-3">Outcomes</h2>
         <div className="flex flex-col gap-2">
           {outcomeRows.map((row) => (
@@ -42,7 +42,7 @@ export default function MetricsGrid({ detail }: { detail: SimulationDetail }) {
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-left lg:col-span-2">
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 text-left lg:col-span-2">
         <h2 className="text-lg font-semibold text-slate-800 mb-3">Wait times</h2>
         <div className="flex gap-8">
           <div>
