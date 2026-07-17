@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { OperatingMode } from '../types/runway';
+import type { AircraftEventType } from '../types/visualisation';
+import AlertButton from './AlertButton';
 
 export interface RunwayOccupancy {
   callsign: string;
@@ -7,11 +9,22 @@ export interface RunwayOccupancy {
   endTime: number;
 }
 
+export interface RunwayEmergency {
+  callsign: string;
+  eventType: AircraftEventType;
+  time: number;
+}
+
 interface RunwayProps {
   identifier: string;
   operatingMode: OperatingMode;
   closed: boolean;
   occupancy: RunwayOccupancy | null;
+  /** Emergencies attributed to aircraft assigned to this runway, up to the
+   * current replay time, most recent first. */
+  emergencies: RunwayEmergency[];
+  /** True when the most recent of `emergencies` is within the trailing alert window. */
+  emergencyActive: boolean;
   /** Returns the current replay time (minutes), interpolated continuously
    * between ticks — call fresh on every animation frame, don't cache. */
   getSmoothTime: () => number;
@@ -38,6 +51,8 @@ export default function Runway({
   operatingMode,
   closed,
   occupancy,
+  emergencies,
+  emergencyActive,
   getSmoothTime,
 }: RunwayProps) {
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +92,19 @@ export default function Runway({
         <h3 className="font-semibold text-slate-800">{identifier}</h3>
         <span className="text-xs uppercase tracking-wide text-slate-400">{operatingMode}</span>
       </div>
+
+      {emergencies.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <AlertButton active={emergencyActive} compact />
+          <ul className="flex flex-col gap-0.5 text-xs text-slate-500">
+            {emergencies.slice(0, 3).map((e) => (
+              <li key={`${e.callsign}-${e.eventType}-${e.time}`}>
+                {e.callsign}: {e.eventType}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {closed ? (
         <p className="text-sm font-medium text-red-600">Closed</p>

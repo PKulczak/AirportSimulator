@@ -33,7 +33,7 @@ export default function QueueTable({ events, currentTime, aircraft, movementType
   const label = movementType === 'Arrival' ? 'Arrivals queue' : 'Departures queue';
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 text-left">
+    <div className="h-full flex flex-col rounded-lg border border-slate-200 bg-brand-bg p-4 text-left">
       <h2 className="text-lg font-semibold text-slate-800 mb-3">
         {label} ({rows.length})
       </h2>
@@ -41,7 +41,8 @@ export default function QueueTable({ events, currentTime, aircraft, movementType
         value={rows}
         emptyMessage={`No ${movementType.toLowerCase()}s currently queued`}
         scrollable
-        scrollHeight="300px"
+        scrollHeight="flex"
+        className="flex-1"
       >
         <Column field="callsign" header="Callsign" />
         <Column

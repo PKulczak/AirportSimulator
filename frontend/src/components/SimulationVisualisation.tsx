@@ -12,11 +12,15 @@ import {
   normalizeVisualisation,
   processEvents,
 } from '../functions/visualisationHelpers';
-import type { VisualisationResponseWire } from '../types/visualisation';
-import Runway, { type RunwayOccupancy } from './Runway';
+import type {
+  EmergencyEvent,
+  SimulationEvent,
+  VisualisationResponseWire,
+} from '../types/visualisation';
+import Runway, { type RunwayEmergency, type RunwayOccupancy } from './Runway';
 import QueueTable from './QueueTable';
 import SimulationEventLog from './SimulationEventLog';
-import AlertButton from './AlertButton';
+import backgroundImage from '../assets/Background.png';
 
 // At 1x, one tick fires per second and advances the sim clock by
 // BASE_STEP_MINUTES; other speeds scale the per-tick step, not the interval,
@@ -159,98 +163,143 @@ export default function SimulationVisualisation() {
   }
 
   const visibleEvents = eventsUpTo(events, currentTime);
-  const emergencyInWindow = visibleEvents.some(
-    (evt) => evt.type === 'emergency' && currentTime - evt.time <= EMERGENCY_WINDOW_MINUTES,
-  );
+  const aircraftById = new Map(data.aircraft.map((a) => [a.id, a]));
+
+  const isEmergencyEvent = (evt: SimulationEvent): evt is EmergencyEvent =>
+    evt.type === 'emergency';
+
+  // Emergencies are attributed to whichever runway the aircraft was (or will
+  // be) assigned to, so each runway card shows only the emergencies relevant
+  // to it rather than one page-wide mixed feed.
+  const emergenciesForRunway = (runwayId: number): RunwayEmergency[] =>
+    visibleEvents
+      .filter(isEmergencyEvent)
+      .filter((evt) => aircraftById.get(evt.aircraftId)?.runwayId === runwayId)
+      .map((evt) => ({
+        callsign: aircraftById.get(evt.aircraftId)?.callsign ?? `#${evt.aircraftId}`,
+        eventType: evt.eventType,
+        time: evt.time,
+      }))
+      .reverse();
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-800">{data.name}</h1>
-          <p className="text-sm text-slate-500">
-            t = {currentTime.toFixed(1)} / {data.durationMinutes} min
-          </p>
-        </div>
-        <AlertButton active={emergencyInWindow} />
-      </div>
+    <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
+      {/* Background image layer, sized to cover the whole area, with the
+       * fixed replay "box" floating on top of it. `-m-6`/`h-[calc(100%+3rem)]`
+       * on the root above cancel out MainLayout's `<main>` padding so this
+       * reaches every edge instead of leaving a plain-background gap around
+       * it. `min-h-0` + `overflow-hidden` keep this pinned to its
+       * flex-allocated share of the viewport — it never grows with content,
+       * so the page itself never scrolls; only elements inside the box
+       * (queue tables, runway list, event log) do. */}
+      <div
+        className="relative flex-1 min-h-0 overflow-hidden p-3 flex items-center justify-center"
+        style={{
+          backgroundImage: `url(${backgroundImage})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        <div className="relative flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-md border border-black bg-white shadow-lg">
+          {/* Top bar: title on the left, timeline/speed/event-log controls top right */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-black/10 p-4">
+            <h1 className="text-xl font-semibold text-slate-800 truncate">{data.name}</h1>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <Button
+                icon={isPlaying ? 'pi pi-pause' : 'pi pi-play'}
+                label={isPlaying ? 'Pause' : 'Play'}
+                onClick={() => setIsPlaying((prev) => !prev)}
+                disabled={currentTime >= data.durationMinutes}
+              />
+              <Button icon="pi pi-replay" label="Reset" outlined onClick={resetSimulation} />
+              <div className="flex flex-col gap-1 w-48">
+                <span className="text-xs text-slate-600">Speed: {speed}x</span>
+                <Slider
+                  value={SPEED_OPTIONS.indexOf(speed)}
+                  min={0}
+                  max={SPEED_OPTIONS.length - 1}
+                  step={1}
+                  onChange={(e: SliderChangeEvent) => setSpeed(SPEED_OPTIONS[e.value as number])}
+                />
+              </div>
+              <Button
+                icon="pi pi-list"
+                label={showEventLog ? 'Hide event log' : 'Show event log'}
+                outlined
+                onClick={() => setShowEventLog((prev) => !prev)}
+              />
+            </div>
+          </div>
 
-      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            icon={isPlaying ? 'pi pi-pause' : 'pi pi-play'}
-            label={isPlaying ? 'Pause' : 'Play'}
-            onClick={() => setIsPlaying((prev) => !prev)}
-            disabled={currentTime >= data.durationMinutes}
-          />
-          <Button icon="pi pi-replay" label="Reset" outlined onClick={resetSimulation} />
-          <div className="flex flex-col gap-1 w-56">
-            <span className="text-sm text-slate-600">Speed: {speed}x</span>
+          {/* Main content: arrivals queue | runway list | departures queue */}
+          <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-3">
+            <div className="min-h-0">
+              <QueueTable
+                events={events}
+                currentTime={currentTime}
+                aircraft={data.aircraft}
+                movementType="Arrival"
+              />
+            </div>
+
+            <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+              {data.runways.map((rw) => {
+                const state = deriveRunwayState(events, currentTime, rw.runwayId);
+                let occupancy: RunwayOccupancy | null = null;
+                if (state.occupiedByAircraftId !== null) {
+                  const ac = aircraftById.get(state.occupiedByAircraftId);
+                  if (ac && ac.runwayAssignedTime !== null && ac.completionTime !== null) {
+                    occupancy = {
+                      callsign: ac.callsign,
+                      startTime: ac.runwayAssignedTime,
+                      endTime: ac.completionTime,
+                    };
+                  }
+                }
+                const emergencies = emergenciesForRunway(rw.runwayId);
+                const emergencyActive = emergencies.some(
+                  (e) => currentTime - e.time <= EMERGENCY_WINDOW_MINUTES,
+                );
+                return (
+                  <Runway
+                    key={rw.runwayId}
+                    identifier={rw.identifier}
+                    operatingMode={rw.operatingMode}
+                    closed={state.closed}
+                    occupancy={occupancy}
+                    emergencies={emergencies}
+                    emergencyActive={emergencyActive}
+                    getSmoothTime={getSmoothTime}
+                  />
+                );
+              })}
+            </div>
+
+            <div className="min-h-0">
+              <QueueTable
+                events={events}
+                currentTime={currentTime}
+                aircraft={data.aircraft}
+                movementType="Departure"
+              />
+            </div>
+          </div>
+
+          {/* Timeline scrubber, pinned to the bottom of the box */}
+          <div className="flex flex-col gap-1 border-t border-black/10 p-4">
+            <span className="text-sm text-slate-600">
+              t = {currentTime.toFixed(1)} / {data.durationMinutes} min
+            </span>
             <Slider
-              value={SPEED_OPTIONS.indexOf(speed)}
+              value={currentTime}
               min={0}
-              max={SPEED_OPTIONS.length - 1}
-              step={1}
-              onChange={(e: SliderChangeEvent) => setSpeed(SPEED_OPTIONS[e.value as number])}
+              max={data.durationMinutes}
+              step={0.5}
+              onChange={(e: SliderChangeEvent) => jumpToTime(e.value as number)}
             />
           </div>
-          <Button
-            icon="pi pi-list"
-            label={showEventLog ? 'Hide event log' : 'Show event log'}
-            outlined
-            className="ml-auto"
-            onClick={() => setShowEventLog((prev) => !prev)}
-          />
         </div>
-        <Slider
-          value={currentTime}
-          min={0}
-          max={data.durationMinutes}
-          step={0.5}
-          onChange={(e: SliderChangeEvent) => jumpToTime(e.value as number)}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {data.runways.map((rw) => {
-          const state = deriveRunwayState(events, currentTime, rw.runwayId);
-          let occupancy: RunwayOccupancy | null = null;
-          if (state.occupiedByAircraftId !== null) {
-            const ac = data.aircraft.find((a) => a.id === state.occupiedByAircraftId);
-            if (ac && ac.runwayAssignedTime !== null && ac.completionTime !== null) {
-              occupancy = {
-                callsign: ac.callsign,
-                startTime: ac.runwayAssignedTime,
-                endTime: ac.completionTime,
-              };
-            }
-          }
-          return (
-            <Runway
-              key={rw.runwayId}
-              identifier={rw.identifier}
-              operatingMode={rw.operatingMode}
-              closed={state.closed}
-              occupancy={occupancy}
-              getSmoothTime={getSmoothTime}
-            />
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <QueueTable
-          events={events}
-          currentTime={currentTime}
-          aircraft={data.aircraft}
-          movementType="Arrival"
-        />
-        <QueueTable
-          events={events}
-          currentTime={currentTime}
-          aircraft={data.aircraft}
-          movementType="Departure"
-        />
       </div>
 
       <Sidebar
