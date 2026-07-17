@@ -202,12 +202,12 @@ export default function SimulationVisualisation() {
         }}
       >
         <div className="relative flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
-          {/* Top bar: page title, then back/name/clock */}
-          <div className="flex flex-col gap-3 border-b border-slate-100 p-4">
+          {/* Top bar: page title, then back/name/clock/controls all on one row */}
+          <div className="flex flex-col gap-1 border-b border-slate-100 px-4 pb-1 pt-4">
             <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
               Airport Simulation
             </h1>
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 py-2">
               <div className="flex items-center gap-3">
                 <Button
                   icon="pi pi-chevron-left"
@@ -220,33 +220,8 @@ export default function SimulationVisualisation() {
               <span className="text-lg font-bold text-slate-900">
                 Current Time: {Math.round(currentTime)} mins
               </span>
-            </div>
 
-            {/* Legend/controls row mirrors the 3-column body grid below, so
-             * each group is locked directly above the element it describes:
-             * the emergency legend over the holding queue (where the dots
-             * appear), the runway-mode legend over the runway list, and the
-             * playback controls over the takeoff queue. */}
-            <div className="grid grid-cols-1 items-center gap-4 lg:grid-cols-3">
-              <div className="flex flex-wrap items-center gap-4">
-                {EMERGENCY_LEGEND.map((item) => (
-                  <span key={item.label} className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                    <span className={`h-3 w-3 rounded-sm ${item.dot}`} />
-                    {item.label}
-                  </span>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center justify-center gap-4">
-                {MODE_LEGEND.map((item) => (
-                  <span key={item.mode} className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                    <span className={`h-3 w-3 rounded-sm ${item.bg}`} />
-                    {item.label}
-                  </span>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center justify-end gap-3">
+              <div className="flex flex-nowrap items-center gap-3">
                 <Button
                   icon={isPlaying ? 'pi pi-pause' : 'pi pi-play'}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
@@ -270,17 +245,53 @@ export default function SimulationVisualisation() {
                     onChange={(e: SliderChangeEvent) => setSpeed(SPEED_OPTIONS[e.value as number])}
                   />
                 </div>
-                <Button
-                  icon="pi pi-list"
-                  label="Event Log"
-                  onClick={() => setShowEventLog((prev) => !prev)}
-                />
+                <Button size="small" onClick={() => setShowEventLog((prev) => !prev)}>
+                  <span className="flex items-center gap-1.5">
+                    <i className="pi pi-list text-xs" />
+                    <span className="flex flex-col text-left text-xs font-semibold leading-tight">
+                      <span>Event</span>
+                      <span>Log</span>
+                    </span>
+                  </span>
+                </Button>
               </div>
+            </div>
+
+            {/* Legend row sits directly above the queues/runways block, each
+             * group locked over the element it describes: the emergency
+             * legend over the holding queue (where the dots appear), the
+             * runway-mode legend over the runway list. */}
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+              <div className="flex items-center justify-center gap-3">
+                {EMERGENCY_LEGEND.map((item) => (
+                  <span
+                    key={item.label}
+                    className="flex max-w-[33.333%] items-center gap-1 text-[10px] font-medium text-slate-600"
+                  >
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${item.dot}`} />
+                    <span className="inline-block leading-tight">{item.label}</span>
+                  </span>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-center gap-3">
+                {MODE_LEGEND.map((item) => (
+                  <span
+                    key={item.mode}
+                    className="flex max-w-[33.333%] items-center gap-1 text-[10px] font-medium text-slate-600"
+                  >
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${item.bg}`} />
+                    <span className="inline-block leading-tight">{item.label}</span>
+                  </span>
+                ))}
+              </div>
+
+              <div />
             </div>
           </div>
 
           {/* Main content: arrivals queue | runway list | departures queue */}
-          <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-3">
+          <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-hidden px-4 pb-4 pt-0 lg:grid-cols-3">
             <div className="min-h-0">
               <QueueTable
                 events={events}

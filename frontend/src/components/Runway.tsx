@@ -85,13 +85,11 @@ export default function Runway({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-xl p-3 ${
+      className={`relative flex items-center gap-3 rounded-xl p-3 ${
         closed ? 'border border-red-300 bg-red-50' : modeStyle.bg
       }`}
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">
-        {identifier}
-      </div>
+      <div className="absolute right-2 top-1 z-10 text-sm font-bold text-black">{identifier}</div>
 
       <div className="relative h-8 min-w-0 flex-1 overflow-hidden">
         {closed ? (

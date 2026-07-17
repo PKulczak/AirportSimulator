@@ -81,23 +81,23 @@ export default function QueueTable({
         <h2 className="text-sm font-bold uppercase tracking-wide text-white">{label}</h2>
       </div>
 
-      <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+      <div className="flex items-center gap-3 border-b border-slate-700 bg-black px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
         <span className="flex-1">Flight</span>
         {isArrival && <span className="w-14 shrink-0 text-right">Alt</span>}
         {isArrival && <span className="w-12 shrink-0 text-right">Fuel</span>}
         <span className="w-10 shrink-0 text-right">{originLabel}</span>
       </div>
 
-      <div className="queue-scroll flex-1 min-h-0 divide-y divide-slate-100 overflow-y-auto bg-white">
+      <div className="queue-scroll flex-1 min-h-0 divide-y divide-slate-800 overflow-y-auto bg-black">
         {rows.length === 0 && (
-          <p className="p-4 text-sm text-slate-400">No {movementType.toLowerCase()}s currently queued</p>
+          <p className="p-4 text-sm text-slate-500">No {movementType.toLowerCase()}s currently queued</p>
         )}
         {rows.map((row) => {
           const emergency = activeEmergencyByAircraft.get(row.aircraftId);
           return (
             <div
               key={row.aircraftId}
-              className="flex items-center gap-3 px-4 py-2 even:bg-slate-50/70"
+              className="flex items-center gap-3 px-4 py-2 even:bg-white/5"
             >
               {emergency && (
                 <span
@@ -106,23 +106,23 @@ export default function QueueTable({
                 />
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate font-mono text-xs font-semibold text-brand-accent-active">
+                <p className="truncate font-mono text-xs font-semibold text-brand-accent">
                   {row.callsign}
                 </p>
-                <p className="truncate text-sm font-semibold text-slate-900">{row.operator}</p>
+                <p className="truncate text-sm font-semibold text-white">{row.operator}</p>
               </div>
               {isArrival && (
-                <span className="w-14 shrink-0 text-right font-mono text-xs font-medium text-slate-500">
+                <span className="w-14 shrink-0 text-right font-mono text-xs font-medium text-slate-400">
                   {row.altitudeFeet}ft
                 </span>
               )}
               {isArrival && (
-                <span className="flex w-12 shrink-0 items-center justify-end gap-1 font-mono text-xs font-medium text-slate-500">
+                <span className="flex w-12 shrink-0 items-center justify-end gap-1 font-mono text-xs font-medium text-slate-400">
                   <FontAwesomeIcon icon={faGasPump} />
                   {row.fuelRemaining?.toFixed(1)}
                 </span>
               )}
-              <span className="w-10 shrink-0 text-right font-mono text-xs font-medium text-slate-400">
+              <span className="w-10 shrink-0 text-right font-mono text-xs font-medium text-slate-500">
                 {row.originDestination}
               </span>
             </div>
