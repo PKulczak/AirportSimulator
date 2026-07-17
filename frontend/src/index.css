@@ -14,6 +14,15 @@
   --color-brand-accent: #fdc261;
   --color-brand-accent-hover: #f0ae3e;
   --color-brand-accent-active: #e0992a;
+
+  /* Replay design: pastel runway-operating-mode swatches (legend + runway
+   * cards) and emergency-type swatches (legend + queue/runway alert dots). */
+  --color-mode-landing: #cdeaf5;
+  --color-mode-takeoff: #f7ecc4;
+  --color-mode-mixed: #f6d2e6;
+  --color-alert-lowfuel: #f6d743;
+  --color-alert-mechanical: #e5533b;
+  --color-alert-passenger: #fdc261;
 }
 
 :root {
@@ -124,4 +133,18 @@ body {
 .p-sidebar {
   background: var(--color-brand-bg);
   color: #000000;
+}
+
+/* Slim accent-coloured scrollbar for the replay queue lists (Chromium/Edge;
+ * Firefox falls back to its default scrollbar, which is an acceptable
+ * degradation for this cosmetic detail). */
+.queue-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.queue-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-brand-accent);
+  border-radius: 9999px;
+}
+.queue-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }

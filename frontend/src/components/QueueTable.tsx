@@ -1,56 +1,134 @@
-import { useMemo } from 'react';
-import { DataTable } from 'primereact/datatable';
-import { Column } from 'primereact/column';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faGasPump, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
 import { deriveQueue } from '../functions/visualisationHelpers';
-import type { AircraftVisualisation, MovementType, SimulationEvent } from '../types/visualisation';
+import { EMERGENCY_TYPE_STYLE } from '../functions/replayTheme';
+import type {
+  AircraftEventType,
+  AircraftVisualisation,
+  MovementType,
+  SimulationEvent,
+} from '../types/visualisation';
 
 interface QueueTableProps {
   events: SimulationEvent[];
   currentTime: number;
   aircraft: AircraftVisualisation[];
   movementType: MovementType;
+  activeEmergencyByAircraft: Map<number, AircraftEventType>;
 }
 
 interface QueueRow {
   aircraftId: number;
   callsign: string;
-  waitingMinutes: number;
+  operator: string;
+  originDestination: string;
+  /** Holding-pattern altitude (arrivals only): the highest-priority aircraft
+   * (longest waiting, first in the queue) holds at 1000ft, each aircraft
+   * behind it stacked 1000ft higher. Departures are grounded awaiting a
+   * runway slot, so altitude doesn't apply to them. */
+  altitudeFeet?: number;
+  /** Fuel burnt off while holding (arrivals only) — departures are grounded
+   * with engines idling, not burning through holding fuel, so this doesn't
+   * apply/deplete for them. */
+  fuelRemaining?: number;
 }
 
-/** Queue table for a single movement type (arrivals or departures) — the
- * replay shows these as two separate panels rather than one mixed queue. */
-export default function QueueTable({ events, currentTime, aircraft, movementType }: QueueTableProps) {
-  const aircraftById = useMemo(() => new Map(aircraft.map((a) => [a.id, a])), [aircraft]);
+const HOLDING_ALTITUDE_STEP_FEET = 1000;
+
+/** Queue panel styled like an airport terminal's flight-information board
+ * (dark title bar, column headings, monospace flight codes) for a single
+ * movement type — arrivals hold to land, departures hold to take off. */
+export default function QueueTable({
+  events,
+  currentTime,
+  aircraft,
+  movementType,
+  activeEmergencyByAircraft,
+}: QueueTableProps) {
+  const aircraftById = new Map(aircraft.map((a) => [a.id, a]));
+  const isArrival = movementType === 'Arrival';
 
   const rows: QueueRow[] = deriveQueue(events, currentTime)
     .filter((entry) => aircraftById.get(entry.aircraftId)?.movementType === movementType)
-    .map((entry) => ({
-      aircraftId: entry.aircraftId,
-      callsign: aircraftById.get(entry.aircraftId)?.callsign ?? `#${entry.aircraftId}`,
-      waitingMinutes: entry.waitingMinutes,
-    }));
+    .map((entry, index) => {
+      const ac = aircraftById.get(entry.aircraftId);
+      return {
+        aircraftId: entry.aircraftId,
+        callsign: ac?.callsign ?? `#${entry.aircraftId}`,
+        operator: ac?.operator ?? '',
+        originDestination: ac?.originDestination ?? '',
+        ...(isArrival
+          ? {
+              altitudeFeet: (index + 1) * HOLDING_ALTITUDE_STEP_FEET,
+              fuelRemaining: Math.max(0, (ac?.initialFuelMinutes ?? 0) - entry.waitingMinutes),
+            }
+          : {}),
+      };
+    });
 
-  const label = movementType === 'Arrival' ? 'Arrivals queue' : 'Departures queue';
+  const label = isArrival ? 'Holding Queue' : 'Takeoff Queue';
+  const originLabel = isArrival ? 'From' : 'To';
 
   return (
-    <div className="h-full flex flex-col rounded-lg border border-slate-200 bg-brand-bg p-4 text-left">
-      <h2 className="text-lg font-semibold text-slate-800 mb-3">
-        {label} ({rows.length})
-      </h2>
-      <DataTable
-        value={rows}
-        emptyMessage={`No ${movementType.toLowerCase()}s currently queued`}
-        scrollable
-        scrollHeight="flex"
-        className="flex-1"
-      >
-        <Column field="callsign" header="Callsign" />
-        <Column
-          field="waitingMinutes"
-          header="Waiting (min)"
-          body={(row: QueueRow) => row.waitingMinutes.toFixed(1)}
-        />
-      </DataTable>
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 shadow-sm">
+      <div className="flex items-center gap-3 border-b-4 border-brand-accent bg-slate-900 px-4 py-3">
+        <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+          <FontAwesomeIcon icon={faTriangleExclamation} className="text-brand-accent" />
+          <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+            {rows.length}
+          </span>
+        </div>
+        <h2 className="text-sm font-bold uppercase tracking-wide text-white">{label}</h2>
+      </div>
+
+      <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        <span className="flex-1">Flight</span>
+        {isArrival && <span className="w-14 shrink-0 text-right">Alt</span>}
+        {isArrival && <span className="w-12 shrink-0 text-right">Fuel</span>}
+        <span className="w-10 shrink-0 text-right">{originLabel}</span>
+      </div>
+
+      <div className="queue-scroll flex-1 min-h-0 divide-y divide-slate-100 overflow-y-auto bg-white">
+        {rows.length === 0 && (
+          <p className="p-4 text-sm text-slate-400">No {movementType.toLowerCase()}s currently queued</p>
+        )}
+        {rows.map((row) => {
+          const emergency = activeEmergencyByAircraft.get(row.aircraftId);
+          return (
+            <div
+              key={row.aircraftId}
+              className="flex items-center gap-3 px-4 py-2 even:bg-slate-50/70"
+            >
+              {emergency && (
+                <span
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${EMERGENCY_TYPE_STYLE[emergency].dot}`}
+                  title={EMERGENCY_TYPE_STYLE[emergency].label}
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-mono text-xs font-semibold text-brand-accent-active">
+                  {row.callsign}
+                </p>
+                <p className="truncate text-sm font-semibold text-slate-900">{row.operator}</p>
+              </div>
+              {isArrival && (
+                <span className="w-14 shrink-0 text-right font-mono text-xs font-medium text-slate-500">
+                  {row.altitudeFeet}ft
+                </span>
+              )}
+              {isArrival && (
+                <span className="flex w-12 shrink-0 items-center justify-end gap-1 font-mono text-xs font-medium text-slate-500">
+                  <FontAwesomeIcon icon={faGasPump} />
+                  {row.fuelRemaining?.toFixed(1)}
+                </span>
+              )}
+              <span className="w-10 shrink-0 text-right font-mono text-xs font-medium text-slate-400">
+                {row.originDestination}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
