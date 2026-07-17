@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Slider, type SliderChangeEvent } from 'primereact/slider';
-import { SelectButton, type SelectButtonChangeEvent } from 'primereact/selectbutton';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { Sidebar } from 'primereact/sidebar';
@@ -185,15 +184,16 @@ export default function SimulationVisualisation() {
             disabled={currentTime >= data.durationMinutes}
           />
           <Button icon="pi pi-replay" label="Reset" outlined onClick={resetSimulation} />
-          <SelectButton
-            value={speed}
-            onChange={(e: SelectButtonChangeEvent) => {
-              if (e.value !== null && e.value !== undefined) {
-                setSpeed(e.value);
-              }
-            }}
-            options={SPEED_OPTIONS.map((s) => ({ label: `${s}x`, value: s }))}
-          />
+          <div className="flex flex-col gap-1 w-56">
+            <span className="text-sm text-slate-600">Speed: {speed}x</span>
+            <Slider
+              value={SPEED_OPTIONS.indexOf(speed)}
+              min={0}
+              max={SPEED_OPTIONS.length - 1}
+              step={1}
+              onChange={(e: SliderChangeEvent) => setSpeed(SPEED_OPTIONS[e.value as number])}
+            />
+          </div>
           <Button
             icon="pi pi-list"
             label={showEventLog ? 'Hide event log' : 'Show event log'}

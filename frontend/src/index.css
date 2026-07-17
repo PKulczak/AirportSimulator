@@ -71,6 +71,9 @@ body {
   border-color: var(--color-brand-accent);
 }
 
+.p-slider {
+  background: #ffffff;
+}
 .p-slider .p-slider-handle {
   border-color: var(--color-brand-accent);
 }
