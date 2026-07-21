@@ -48,6 +48,7 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
 
   const selectedRunwayIds = watch('runwayIds');
   const runwayModes = watch('runwayModes');
+  const runwayStartClosed = watch('runwayStartClosed');
 
   const toggleRunway = (runwayId: number, checked: boolean) => {
     if (checked) {
@@ -72,6 +73,14 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
     setValue(
       'runwayModes',
       { ...runwayModes, [String(runwayId)]: mode },
+      { shouldValidate: true },
+    );
+  };
+
+  const setRunwayStartClosed = (runwayId: number, closed: boolean) => {
+    setValue(
+      'runwayStartClosed',
+      { ...runwayStartClosed, [String(runwayId)]: closed },
       { shouldValidate: true },
     );
   };
@@ -259,6 +268,20 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
                   placeholder="Mode"
                   className="w-44"
                 />
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    inputId={`runway-${runway.id}-start-closed`}
+                    checked={runwayStartClosed[String(runway.id)] ?? false}
+                    onChange={(e) => setRunwayStartClosed(runway.id, e.checked ?? false)}
+                    disabled={!checked}
+                  />
+                  <label
+                    htmlFor={`runway-${runway.id}-start-closed`}
+                    className="text-sm text-slate-700"
+                  >
+                    Start closed
+                  </label>
+                </div>
               </div>
             );
           })}

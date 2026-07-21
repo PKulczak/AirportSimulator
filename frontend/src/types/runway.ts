@@ -15,4 +15,6 @@ export interface Runway {
 export interface SimulationRunwayConfig {
   runwayId: number;
   operatingMode: OperatingMode;
+  /** Initial state at simulation start — defaults to Open server-side if omitted. */
+  operationalStatus?: OperationalStatus;
 }

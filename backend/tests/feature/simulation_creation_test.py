@@ -52,6 +52,42 @@ class SimulationCreationTest(BaseFeatureTest):
             SimulationRunway.objects.filter(simulation=simulation).count(), 2
         )
 
+    def test_create_simulation_defaults_runway_operational_status_to_open(self):
+        response = self.client.post(
+            reverse("simulation-list"), self._payload(), format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        simulation = Simulation.objects.get(id=response.json()["id"])
+        statuses = set(
+            SimulationRunway.objects.filter(simulation=simulation).values_list(
+                "operational_status", flat=True
+            )
+        )
+        self.assertEqual(statuses, {SimulationRunway.OperationalStatus.OPEN})
+
+    def test_create_simulation_persists_runway_operational_status(self):
+        payload = self._payload(
+            runways=[
+                {
+                    "runwayId": self.runways[0].id,
+                    "operatingMode": "Mixed",
+                    "operationalStatus": "Closed",
+                },
+                {"runwayId": self.runways[1].id, "operatingMode": "Mixed"},
+            ]
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        simulation = Simulation.objects.get(id=response.json()["id"])
+        sr_closed = SimulationRunway.objects.get(
+            simulation=simulation, runway=self.runways[0]
+        )
+        sr_open = SimulationRunway.objects.get(
+            simulation=simulation, runway=self.runways[1]
+        )
+        self.assertEqual(sr_closed.operational_status, SimulationRunway.OperationalStatus.CLOSED)
+        self.assertEqual(sr_open.operational_status, SimulationRunway.OperationalStatus.OPEN)
+
     def test_create_simulation_defaults_aircraft_speed_from_settings(self):
         from django.conf import settings
 

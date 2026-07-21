@@ -59,12 +59,24 @@ To check for stray processes on Windows, list everything matching the process na
 compare PIDs/start times against what you believe is currently running, e.g.:
 
 ```
-powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*rundramatiq*' } | Select-Object ProcessId, CreationDate, CommandLine | Format-List"
+powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*dramatiq*' -or $_.CommandLine -like '*runserver*' -or $_.CommandLine -like '*vite*' -or $_.CommandLine -like '*concurrently*' } | Select-Object ProcessId, CreationDate, CommandLine | Format-List"
 ```
 
-(swap `rundramatiq` for `runserver` or `vite`/`npm run dev` as needed). Kill *every*
-matching process, confirm the list is empty, then start exactly one fresh instance of
-each and verify it started cleanly before considering the restart done.
+**Match on `*dramatiq*`, not `*rundramatiq*`.** `manage.py rundramatiq` is only the
+wrapping management command; it spawns actual `dramatiq --path . --processes N ...`
+worker subprocesses whose command line does *not* contain the substring "rundramatiq".
+A filter on `*rundramatiq*` silently misses those worker processes entirely — this
+caused a real incident: a "clean" restart killed the `manage.py rundramatiq` wrapper but
+left the actual worker subprocess running for hours, still on old code, so an engine
+change appeared to have no effect even though every other signal (tests, `runserver`
+responses) said the code was correct. Always search broadly (`*dramatiq*`) and kill
+every match, not just the process you launched it with.
+
+Kill *every* matching process, confirm the list is empty, then start exactly one fresh
+instance of each and verify it started cleanly before considering the restart done. Then
+verify the change actually took effect against a live request/task (e.g. `curl` the
+relevant endpoint or create a real simulation) — a clean restart proves the process is
+new, not that the specific behavior you changed is now reachable.
 
 ## Common commands
 

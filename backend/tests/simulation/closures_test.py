@@ -116,6 +116,56 @@ def test_include_closures_false_never_creates_closure_events():
 
 
 @pytest.mark.django_db
+def test_runway_closed_at_start_never_gets_aircraft_and_records_closure_event():
+    helper = BaseFeatureTest()
+    open_runway, closed_runway = helper.create_runways(2)
+    simulation = helper.create_simulations(
+        1,
+        include_closures=False,
+        arrival_rate_per_hour=60,
+        departure_rate_per_hour=60,
+        duration_minutes=120,
+        max_wait_minutes=20,
+        random_seed=11,
+    )
+    SimulationRunway.objects.create(
+        simulation=simulation,
+        runway=open_runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+    closed_simulation_runway = SimulationRunway.objects.create(
+        simulation=simulation,
+        runway=closed_runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+        operational_status=SimulationRunway.OperationalStatus.CLOSED,
+    )
+
+    SimulationRunner().run(simulation.id)
+
+    simulation.refresh_from_db()
+    assert simulation.status == Simulation.Status.COMPLETE
+
+    from api.models import Aircraft
+
+    assert not Aircraft.objects.filter(
+        simulation=simulation, runway=closed_runway
+    ).exists()
+    assert Aircraft.objects.filter(
+        simulation=simulation, runway=open_runway
+    ).exists()
+
+    events = list(
+        SimulationRunwayEvent.objects.filter(
+            simulation_runway=closed_simulation_runway
+        )
+    )
+    assert len(events) == 1
+    assert events[0].event_type == SimulationRunwayEvent.EventType.CLOSED
+    assert events[0].reason == "Closed at simulation start"
+    assert events[0].occurred_at == simulation.started_at
+
+
+@pytest.mark.django_db
 def test_include_closures_true_can_create_closure_events():
     helper = BaseFeatureTest()
     runway = helper.create_runways(1)[0]

@@ -5,7 +5,7 @@ import numpy as np
 import simpy
 from django.utils import timezone
 
-from api.models import Aircraft, Simulation, SimulationRunway
+from api.models import Aircraft, Simulation, SimulationRunway, SimulationRunwayEvent
 from api.simulation import constants
 from api.simulation.aircraft_data_generator import AircraftDataGenerator
 from api.simulation.closures import closure_process
@@ -64,12 +64,29 @@ class SimulationRunner:
         aircraft_list = [aircraft for aircraft, _ in aircraft_entries]
         Aircraft.objects.bulk_create(aircraft_list)
 
-        simulation_runways = list(
-            SimulationRunway.objects.filter(
-                simulation=simulation,
-                operational_status=SimulationRunway.OperationalStatus.OPEN,
-            ).select_related("runway")
+        all_simulation_runways = list(
+            SimulationRunway.objects.filter(simulation=simulation).select_related("runway")
         )
+        simulation_runways = [
+            sr for sr in all_simulation_runways
+            if sr.operational_status == SimulationRunway.OperationalStatus.OPEN
+        ]
+        closed_at_start = [
+            sr for sr in all_simulation_runways
+            if sr.operational_status != SimulationRunway.OperationalStatus.OPEN
+        ]
+        if closed_at_start:
+            SimulationRunwayEvent.objects.bulk_create(
+                [
+                    SimulationRunwayEvent(
+                        simulation_runway=sr,
+                        event_type=SimulationRunwayEvent.EventType.CLOSED,
+                        occurred_at=base_time,
+                        reason="Closed at simulation start",
+                    )
+                    for sr in closed_at_start
+                ]
+            )
 
         env = simpy.Environment()
 

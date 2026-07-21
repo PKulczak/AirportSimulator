@@ -19,6 +19,7 @@ export const simulationFormSchema = z
     includeClosures: z.boolean(),
     runwayIds: z.array(z.number()).min(1, 'Select at least one runway'),
     runwayModes: z.record(z.string(), operatingModeSchema),
+    runwayStartClosed: z.record(z.string(), z.boolean()),
   })
   .refine((data) => data.maxWaitMinutes < data.durationMinutes, {
     message: 'Max wait time must be less than the simulation duration',
@@ -68,6 +69,7 @@ export const defaultSimulationFormValues: SimulationFormValues = {
   includeClosures: false,
   runwayIds: [],
   runwayModes: {},
+  runwayStartClosed: {},
 };
 
 export function toCreateSimulationRequest(
@@ -84,6 +86,7 @@ export function toCreateSimulationRequest(
     runways: values.runwayIds.map((runwayId) => ({
       runwayId,
       operatingMode: values.runwayModes[String(runwayId)] as OperatingMode,
+      operationalStatus: values.runwayStartClosed[String(runwayId)] ? 'Closed' : 'Open',
     })),
   };
 }

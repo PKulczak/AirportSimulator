@@ -177,7 +177,9 @@ those are two different numbers and both matter.
   only, split by movement type) on the results/detail page.
 - ✅ **Done**: max concurrent queue depth metric (peak simultaneous occupancy, split
   by movement type) on the results/detail page.
-- 🔲 **Outstanding**: runway operational status as a creation-time user control.
+- ✅ **Done**: runway operational status as a creation-time user control (a runway can
+  be started `Closed`; it's excluded from the run and a synthetic closure event records
+  why).
 - 🔲 **Outstanding**: 4-value operational status enum (currently binary Open/Closed)
   and named closure reasons (currently generic "Random closure" text).
 - 🔲 **Outstanding**: restrict priority-escalation/emergency reordering to arrivals only

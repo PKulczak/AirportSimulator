@@ -8,3 +8,8 @@ class SimulationRunwayCreationDto(serializers.Serializer):
     operating_mode = serializers.ChoiceField(
         choices=SimulationRunway.OperatingMode.choices
     )
+    operational_status = serializers.ChoiceField(
+        choices=SimulationRunway.OperationalStatus.choices,
+        required=False,
+        default=SimulationRunway.OperationalStatus.OPEN,
+    )
