@@ -173,7 +173,12 @@ class SimulationRunner:
 
         tracker = PriorityTracker()
         is_arrival = aircraft.movement_type == Aircraft.MovementType.ARRIVAL
-        fuel_deadline = aircraft.initial_fuel_minutes if is_arrival else float("inf")
+        # Must land before remaining fuel drops below the forced-divert
+        # reserve, not when the tank is literally empty.
+        fuel_deadline = (
+            aircraft.initial_fuel_minutes - constants.FORCED_DIVERT_FUEL_REMAINING_MINUTES
+            if is_arrival else float("inf")
+        )
         wait_deadline = min(simulation.max_wait_minutes, fuel_deadline)
 
         state = {"done": False}
@@ -301,8 +306,8 @@ class SimulationRunner:
         fired_fuel_critical = False
 
         if is_arrival:
-            low_fuel_at = fuel_deadline - constants.LOW_FUEL_THRESHOLD_MINUTES
-            critical_fuel_at = fuel_deadline - constants.FUEL_CRITICAL_THRESHOLD_MINUTES
+            low_fuel_at = fuel_deadline * constants.LOW_FUEL_THRESHOLD_FRACTION
+            critical_fuel_at = fuel_deadline * constants.FUEL_CRITICAL_THRESHOLD_FRACTION
 
             for threshold_time, event_type, flag_name in (
                 (low_fuel_at, "LowFuel", "fired_low_fuel"),

@@ -164,8 +164,8 @@ those are two different numbers and both matter.
 
 - ✅ **Done**: evenly-spaced scheduling with Gaussian jitter around the target time
   (replacing an earlier Poisson-process approximation).
-- 🔲 **Outstanding**: uniform(20–60 min) fuel model with a hard 10-minute divert
-  threshold (currently a wider Normal-distributed fuel model).
+- ✅ **Done**: uniform(20–60 min) fuel model with a hard 10-minute divert threshold
+  (replacing an earlier wider Normal-distributed fuel model).
 - 🔲 **Outstanding**: scheduled-vs-actual delay metric on the results/detail page.
 - 🔲 **Outstanding**: max concurrent queue depth metric on the results/detail page.
 - 🔲 **Outstanding**: runway operational status as a creation-time user control.

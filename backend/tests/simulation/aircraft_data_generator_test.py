@@ -118,6 +118,20 @@ def test_generated_aircraft_have_realistic_fields():
 
 
 @pytest.mark.django_db
+def test_initial_fuel_is_uniform_20_to_60_minutes():
+    base_time = timezone.now()
+    sim = _make_simulation(
+        arrival_rate_per_hour=60, departure_rate_per_hour=60, duration_minutes=300
+    )
+
+    result = AircraftDataGenerator(sim, base_time).generate()
+    assert len(result) > 50
+
+    for aircraft, _ in result:
+        assert 20 <= aircraft.initial_fuel_minutes <= 60
+
+
+@pytest.mark.django_db
 def test_scheduled_times_are_evenly_spaced_targets():
     """`scheduled_time` should be the nominal, evenly-spaced target
     (60 / rate_per_hour minutes apart) — not jittered — so a future

@@ -61,9 +61,11 @@ def test_low_fuel_and_fuel_critical_fire_before_forced_diversion():
         operating_mode=SimulationRunway.OperatingMode.MIXED,
     )
 
-    # Low but non-zero fuel: the aircraft should get LowFuel (@ fuel-30) and
-    # FuelCritical (@ fuel-12) events, then a forced Diverted once fuel
-    # reaches zero (@ fuel minutes elapsed) — well before max_wait_minutes.
+    # Low but non-zero fuel: the aircraft should get LowFuel (@ 50% of its
+    # wait-tolerance budget) and FuelCritical (@ 80%) events, then a forced
+    # Diverted once remaining fuel would drop below the forced-divert
+    # reserve (@ fuel_deadline = initial_fuel_minutes - reserve) — well
+    # before max_wait_minutes.
     aircraft = helper.create_aircraft(
         simulation=simulation,
         movement_type=Aircraft.MovementType.ARRIVAL,

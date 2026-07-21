@@ -105,10 +105,9 @@ class AircraftDataGenerator:
         operator = airlines[self.rng.integers(0, len(airlines))]
         callsign = self._generate_callsign(operator)
 
-        fuel = self.rng.normal(
-            constants.INITIAL_FUEL_MINUTES_MEAN, constants.INITIAL_FUEL_MINUTES_STD
+        initial_fuel_minutes = self.rng.uniform(
+            constants.INITIAL_FUEL_MINUTES_MIN, constants.INITIAL_FUEL_MINUTES_MAX
         )
-        initial_fuel_minutes = max(constants.INITIAL_FUEL_MINUTES_MIN, float(fuel))
 
         scheduled_time = self.base_time + timedelta(minutes=target_offset_minutes)
 

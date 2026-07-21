@@ -28,13 +28,20 @@ PASSENGER_HEALTH_PROBABILITY_WEIGHT = 0.3
 # Remaining weight goes to fuel-related events, which are only rolled for
 # Arrival aircraft (departures don't run out of fuel waiting at the gate).
 
-LOW_FUEL_THRESHOLD_MINUTES = 30
-FUEL_CRITICAL_THRESHOLD_MINUTES = 12
+# Fixed-minute-before-deadline offsets don't scale down to the fuel range
+# below (a fixed 30-minute warning would already be "in the past" for an
+# aircraft with only a 10-minute total wait-tolerance budget). Warnings are
+# fractions of the wait-tolerance budget instead, so they always land in
+# order no matter how tight an individual aircraft's fuel is.
+LOW_FUEL_THRESHOLD_FRACTION = 0.5  # fires at 50% of budget elapsed
+FUEL_CRITICAL_THRESHOLD_FRACTION = 0.8  # fires at 80% of budget elapsed (20% remaining)
 
 # --- Aircraft generation ---
-INITIAL_FUEL_MINUTES_MEAN = 180
-INITIAL_FUEL_MINUTES_STD = 25
-INITIAL_FUEL_MINUTES_MIN = 60
+# Fuel is uniformly distributed 20-60 minutes' worth; an arrival must land
+# (or be diverted) before remaining fuel would drop below the reserve below.
+INITIAL_FUEL_MINUTES_MIN = 20
+INITIAL_FUEL_MINUTES_MAX = 60
+FORCED_DIVERT_FUEL_REMAINING_MINUTES = 10
 
 # Aircraft are scheduled at evenly-spaced target times (60 / rate_per_hour
 # minutes apart); the actual time they enter the model is jittered around
