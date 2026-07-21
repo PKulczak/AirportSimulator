@@ -2,7 +2,7 @@ import { ProgressBar } from 'primereact/progressbar';
 import type { SimulationDetail } from '../types/metrics';
 
 export default function MetricsGrid({ detail }: { detail: SimulationDetail }) {
-  const { outcomeCounts, waitTimeStats, delayStats, successRate } = detail;
+  const { outcomeCounts, waitTimeStats, delayStats, queueDepthStats, successRate } = detail;
   const totalAircraft = outcomeCounts.total;
 
   const outcomeRows: { label: string; count: number; color: string }[] = [
@@ -89,6 +89,24 @@ export default function MetricsGrid({ detail }: { detail: SimulationDetail }) {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 text-left lg:col-span-2">
+        <h2 className="text-lg font-semibold text-slate-800 mb-3">Peak queue depth</h2>
+        <div className="flex gap-8">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Holding pattern</p>
+            <p className="text-xl font-semibold text-slate-800">
+              {queueDepthStats.arrival} aircraft
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Take-off queue</p>
+            <p className="text-xl font-semibold text-slate-800">
+              {queueDepthStats.departure} aircraft
+            </p>
+          </div>
         </div>
       </div>
     </div>

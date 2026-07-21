@@ -9,6 +9,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
     outcome_counts = serializers.SerializerMethodField()
     wait_time_stats = serializers.SerializerMethodField()
     delay_stats = serializers.SerializerMethodField()
+    queue_depth_stats = serializers.SerializerMethodField()
     runway_stats = serializers.SerializerMethodField()
     closure_event_count = serializers.SerializerMethodField()
 
@@ -32,6 +33,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
             "outcome_counts",
             "wait_time_stats",
             "delay_stats",
+            "queue_depth_stats",
             "runway_stats",
             "closure_event_count",
         ]
@@ -83,6 +85,39 @@ class SimulationDetailDto(serializers.ModelSerializer):
         return {
             "arrival": stats_for("Arrival"),
             "departure": stats_for("Departure"),
+        }
+
+    def get_queue_depth_stats(self, obj):
+        # Peak simultaneous occupancy of the holding pattern / take-off
+        # queue, not an aggregate of individual wait times — a sweep-line
+        # over each aircraft's [queue_entry_time, exit_time) interval, where
+        # exit is whichever of runway_assigned_time/completion_time actually
+        # ended its wait. Exits are sorted before entries at the same
+        # instant so a same-tick hand-off isn't double-counted as overlap.
+        def peak_for(movement_type):
+            events = []
+            for aircraft in obj.aircraft.all():
+                if aircraft.movement_type != movement_type or aircraft.queue_entry_time is None:
+                    continue
+                exit_time = aircraft.runway_assigned_time or aircraft.completion_time
+                if exit_time is None:
+                    continue
+                events.append((aircraft.queue_entry_time, 1))
+                events.append((exit_time, -1))
+
+            if not events:
+                return 0
+
+            events.sort(key=lambda event: (event[0], event[1]))
+            current = peak = 0
+            for _, delta in events:
+                current += delta
+                peak = max(peak, current)
+            return peak
+
+        return {
+            "arrival": peak_for("Arrival"),
+            "departure": peak_for("Departure"),
         }
 
     def get_closure_event_count(self, obj):

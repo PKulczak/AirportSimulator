@@ -175,7 +175,8 @@ those are two different numbers and both matter.
   (replacing an earlier wider Normal-distributed fuel model).
 - ✅ **Done**: delay metric (queue join → actual landing/take-off, Success outcomes
   only, split by movement type) on the results/detail page.
-- 🔲 **Outstanding**: max concurrent queue depth metric on the results/detail page.
+- ✅ **Done**: max concurrent queue depth metric (peak simultaneous occupancy, split
+  by movement type) on the results/detail page.
 - 🔲 **Outstanding**: runway operational status as a creation-time user control.
 - 🔲 **Outstanding**: 4-value operational status enum (currently binary Open/Closed)
   and named closure reasons (currently generic "Random closure" text).

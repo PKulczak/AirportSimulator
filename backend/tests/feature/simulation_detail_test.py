@@ -21,6 +21,8 @@ class SimulationDetailTest(BaseFeatureTest):
         self.assertEqual(body["waitTimeStats"]["averageMinutes"], None)
         self.assertEqual(body["delayStats"]["arrival"]["averageMinutes"], None)
         self.assertEqual(body["delayStats"]["departure"]["averageMinutes"], None)
+        self.assertEqual(body["queueDepthStats"]["arrival"], 0)
+        self.assertEqual(body["queueDepthStats"]["departure"], 0)
         self.assertEqual(body["runwayStats"], [])
 
     def test_detail_aggregate_correctness(self):
@@ -132,6 +134,85 @@ class SimulationDetailTest(BaseFeatureTest):
         self.assertEqual(body["delayStats"]["arrival"]["maxMinutes"], 10.0)
         self.assertEqual(body["delayStats"]["departure"]["averageMinutes"], 6.0)
         self.assertEqual(body["delayStats"]["departure"]["maxMinutes"], 6.0)
+
+    def test_queue_depth_stats_peak_concurrent_occupancy(self):
+        simulation = self.create_simulations(1, status=Simulation.Status.COMPLETE)
+        t0 = timezone.now()
+
+        def minutes(n):
+            return t0 + timezone.timedelta(minutes=n)
+
+        # Arrivals: A1 [0,10) and A2 [2,12) overlap for [2,10) -> peak 2.
+        # A3 [20,25) is isolated -> doesn't raise the peak.
+        self.create_aircraft(
+            simulation=simulation,
+            movement_type=Aircraft.MovementType.ARRIVAL,
+            outcome=Aircraft.Outcome.SUCCESS,
+            was_success=True,
+            queue_entry_time=minutes(0),
+            completion_time=minutes(10),
+        )
+        self.create_aircraft(
+            simulation=simulation,
+            movement_type=Aircraft.MovementType.ARRIVAL,
+            outcome=Aircraft.Outcome.SUCCESS,
+            was_success=True,
+            queue_entry_time=minutes(2),
+            completion_time=minutes(12),
+        )
+        self.create_aircraft(
+            simulation=simulation,
+            movement_type=Aircraft.MovementType.ARRIVAL,
+            outcome=Aircraft.Outcome.DIVERTED,
+            was_success=False,
+            queue_entry_time=minutes(20),
+            completion_time=minutes(25),
+        )
+
+        # Departures: D1 [0,30), D2 [5,15), D3 [8,12) all overlap on [8,12)
+        # -> peak 3. D4 enters at 30, exactly when D1 exits -> must NOT be
+        # counted as a fourth simultaneous occupant.
+        self.create_aircraft(
+            simulation=simulation,
+            movement_type=Aircraft.MovementType.DEPARTURE,
+            outcome=Aircraft.Outcome.SUCCESS,
+            was_success=True,
+            queue_entry_time=minutes(0),
+            completion_time=minutes(30),
+        )
+        self.create_aircraft(
+            simulation=simulation,
+            movement_type=Aircraft.MovementType.DEPARTURE,
+            outcome=Aircraft.Outcome.SUCCESS,
+            was_success=True,
+            queue_entry_time=minutes(5),
+            completion_time=minutes(15),
+        )
+        self.create_aircraft(
+            simulation=simulation,
+            movement_type=Aircraft.MovementType.DEPARTURE,
+            outcome=Aircraft.Outcome.CANCELLED,
+            was_success=False,
+            queue_entry_time=minutes(8),
+            completion_time=minutes(12),
+        )
+        self.create_aircraft(
+            simulation=simulation,
+            movement_type=Aircraft.MovementType.DEPARTURE,
+            outcome=Aircraft.Outcome.SUCCESS,
+            was_success=True,
+            queue_entry_time=minutes(30),
+            completion_time=minutes(35),
+        )
+
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertEqual(body["queueDepthStats"]["arrival"], 2)
+        self.assertEqual(body["queueDepthStats"]["departure"], 3)
 
     def test_detail_404_for_unknown_simulation(self):
         response = self.client.get(reverse("simulation-detail", kwargs={"pk": 999999}))

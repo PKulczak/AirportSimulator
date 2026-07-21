@@ -24,6 +24,11 @@ export interface MovementDelayStats {
   departure: DelayStats;
 }
 
+export interface QueueDepthStats {
+  arrival: number;
+  departure: number;
+}
+
 export interface RunwayStat {
   runwayId: number;
   identifier: string;
@@ -52,6 +57,7 @@ export interface SimulationDetail {
   outcomeCounts: OutcomeCounts;
   waitTimeStats: WaitTimeStats;
   delayStats: MovementDelayStats;
+  queueDepthStats: QueueDepthStats;
   runwayStats: RunwayStat[];
   closureEventCount: number;
 }
