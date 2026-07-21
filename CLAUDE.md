@@ -35,6 +35,37 @@ npm install
 npm run dev                         # Vite dev server on http://localhost:3000
 ```
 
+## Working with the running dev processes (Claude Code / agents)
+
+After making *any* code change to the backend or frontend, fully restart all three dev
+processes — `rundramatiq`, `runserver`, and `npm run dev` — rather than assuming only
+the one you'd expect to be affected needs restarting (e.g. don't assume a serializer-only
+change is safe to leave `runserver` running for, or that a frontend-only change needs no
+backend restart).
+
+Before restarting, and again after, check for **stray/duplicate processes** rather than
+trusting that a previously-tracked background task is the only one running. A restart
+performed outside the normal tracked-background-task lifecycle (e.g. a manual
+`taskkill`/`nohup` combo instead of stopping and relaunching through the same mechanism)
+leaves an orphaned process that keeps running the *old* code indefinitely, silently
+competing for the same port/queue as the "real" current process. This has caused real,
+confusing bugs in this project: a stray `rundramatiq` worker kept processing simulations
+with a fuel model from days earlier, and stray `runserver` processes (one even started
+with `--noreload`) kept serving API responses missing fields that had just been added —
+in both cases the code looked correct and tests passed, because the bug was purely "which
+process actually answered this request," not the code itself.
+
+To check for stray processes on Windows, list everything matching the process name and
+compare PIDs/start times against what you believe is currently running, e.g.:
+
+```
+powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*rundramatiq*' } | Select-Object ProcessId, CreationDate, CommandLine | Format-List"
+```
+
+(swap `rundramatiq` for `runserver` or `vite`/`npm run dev` as needed). Kill *every*
+matching process, confirm the list is empty, then start exactly one fresh instance of
+each and verify it started cleanly before considering the restart done.
+
 ## Common commands
 
 Backend (run from `backend/`):
