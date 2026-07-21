@@ -60,7 +60,8 @@ class SimulationRunner:
         base_time = simulation.started_at
         rng = np.random.default_rng(simulation.random_seed)
 
-        aircraft_list = AircraftDataGenerator(simulation, base_time).generate()
+        aircraft_entries = AircraftDataGenerator(simulation, base_time).generate()
+        aircraft_list = [aircraft for aircraft, _ in aircraft_entries]
         Aircraft.objects.bulk_create(aircraft_list)
 
         simulation_runways = list(
@@ -83,8 +84,7 @@ class SimulationRunner:
 
         operation_minutes = self._operation_minutes(simulation.aircraft_speed_knots)
 
-        for aircraft in aircraft_list:
-            offset = (aircraft.scheduled_time - base_time).total_seconds() / 60.0
+        for aircraft, offset in aircraft_entries:
             self._spawn_aircraft_process(
                 env, rng, simulation, aircraft, wrappers, offset, to_datetime,
                 operation_minutes,

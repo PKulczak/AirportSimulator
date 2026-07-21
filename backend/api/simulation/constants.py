@@ -36,6 +36,12 @@ INITIAL_FUEL_MINUTES_MEAN = 180
 INITIAL_FUEL_MINUTES_STD = 25
 INITIAL_FUEL_MINUTES_MIN = 60
 
+# Aircraft are scheduled at evenly-spaced target times (60 / rate_per_hour
+# minutes apart); the actual time they enter the model is jittered around
+# that target by Normal(0, this-many-minutes), per the brief's assumption
+# that real-world weather/delays perturb arrival/departure timing.
+TARGET_TIME_JITTER_STD_MINUTES = 5
+
 # --- Runway operation ---
 # Nominal runway-occupancy time (minutes) for a single arrival/departure
 # operation at the configured aircraft speed; faster aircraft occupy the
