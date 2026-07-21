@@ -126,15 +126,22 @@ joining a queue, aren't represented.
 ## Output — in priority order
 
 1. **Departures with a dedicated take-off runway**: variation in take-off timing,
-   max/average take-off-queue length, max/average delay between scheduled and actual
-   departure time.
+   max/average take-off-queue length, max/average delay between joining the take-off
+   queue and actually taking off.
 2. **Arrivals with a dedicated landing runway**: variation in arrival timing, max/average
-   holding-pattern length, max/average delay between scheduled and actual arrival time.
+   holding-pattern length, max/average delay between joining the holding pattern and
+   actually landing.
 3. **Further runway configurations**: mixed-use and multi-runway setups.
 4. **Runway closures**: user-specified closures, and the resulting max number of
    cancellations under a configurable max wait time.
 5. **Fuel modelling**: max number of diversions caused by fuel exhaustion in the
    holding pattern.
+
+"Delay" here deliberately means queue-join-to-completion, not a comparison against the
+jittered schedule from the scheduling model above — the schedule jitter is input noise
+(real-world weather/variability), not something the airport's own queueing caused, so
+it's excluded from this figure. Only aircraft that actually landed/took off (`Success`)
+count; diverted/cancelled aircraft never completed, so there's nothing to measure.
 
 "Maximum queue length" means **peak concurrent occupancy** (the most aircraft
 simultaneously queued at any instant), not an individual aircraft's longest wait —
@@ -166,7 +173,8 @@ those are two different numbers and both matter.
   (replacing an earlier Poisson-process approximation).
 - ✅ **Done**: uniform(20–60 min) fuel model with a hard 10-minute divert threshold
   (replacing an earlier wider Normal-distributed fuel model).
-- 🔲 **Outstanding**: scheduled-vs-actual delay metric on the results/detail page.
+- ✅ **Done**: delay metric (queue join → actual landing/take-off, Success outcomes
+  only, split by movement type) on the results/detail page.
 - 🔲 **Outstanding**: max concurrent queue depth metric on the results/detail page.
 - 🔲 **Outstanding**: runway operational status as a creation-time user control.
 - 🔲 **Outstanding**: 4-value operational status enum (currently binary Open/Closed)

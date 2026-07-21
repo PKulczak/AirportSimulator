@@ -2,7 +2,7 @@ import { ProgressBar } from 'primereact/progressbar';
 import type { SimulationDetail } from '../types/metrics';
 
 export default function MetricsGrid({ detail }: { detail: SimulationDetail }) {
-  const { outcomeCounts, waitTimeStats, successRate } = detail;
+  const { outcomeCounts, waitTimeStats, delayStats, successRate } = detail;
   const totalAircraft = outcomeCounts.total;
 
   const outcomeRows: { label: string; count: number; color: string }[] = [
@@ -57,6 +57,38 @@ export default function MetricsGrid({ detail }: { detail: SimulationDetail }) {
               {waitTimeStats.maxMinutes != null ? waitTimeStats.maxMinutes.toFixed(1) : '—'} min
             </p>
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 text-left lg:col-span-2">
+        <h2 className="text-lg font-semibold text-slate-800 mb-3">
+          Delay (queue join to landing/take-off)
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {(
+            [
+              { label: 'Arrival', stats: delayStats.arrival },
+              { label: 'Departure', stats: delayStats.departure },
+            ] as const
+          ).map(({ label, stats }) => (
+            <div key={label}>
+              <p className="text-xs uppercase tracking-wide text-slate-400 mb-1">{label}</p>
+              <div className="flex gap-8">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Average</p>
+                  <p className="text-xl font-semibold text-slate-800">
+                    {stats.averageMinutes != null ? stats.averageMinutes.toFixed(1) : '—'} min
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Max</p>
+                  <p className="text-xl font-semibold text-slate-800">
+                    {stats.maxMinutes != null ? stats.maxMinutes.toFixed(1) : '—'} min
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

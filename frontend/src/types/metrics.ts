@@ -14,6 +14,16 @@ export interface WaitTimeStats {
   maxMinutes: number | null;
 }
 
+export interface DelayStats {
+  averageMinutes: number | null;
+  maxMinutes: number | null;
+}
+
+export interface MovementDelayStats {
+  arrival: DelayStats;
+  departure: DelayStats;
+}
+
 export interface RunwayStat {
   runwayId: number;
   identifier: string;
@@ -41,6 +51,7 @@ export interface SimulationDetail {
   successRate: number;
   outcomeCounts: OutcomeCounts;
   waitTimeStats: WaitTimeStats;
+  delayStats: MovementDelayStats;
   runwayStats: RunwayStat[];
   closureEventCount: number;
 }

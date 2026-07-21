@@ -8,6 +8,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
     success_rate = serializers.SerializerMethodField()
     outcome_counts = serializers.SerializerMethodField()
     wait_time_stats = serializers.SerializerMethodField()
+    delay_stats = serializers.SerializerMethodField()
     runway_stats = serializers.SerializerMethodField()
     closure_event_count = serializers.SerializerMethodField()
 
@@ -30,6 +31,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
             "success_rate",
             "outcome_counts",
             "wait_time_stats",
+            "delay_stats",
             "runway_stats",
             "closure_event_count",
         ]
@@ -54,6 +56,33 @@ class SimulationDetailDto(serializers.ModelSerializer):
         return {
             "average_minutes": getattr(obj, "avg_wait_minutes", None),
             "max_minutes": getattr(obj, "max_wait_minutes_actual", None),
+        }
+
+    def get_delay_stats(self, obj):
+        # Queue-join to actual landing/take-off, not scheduled-vs-actual —
+        # deliberately excludes the schedule jitter from aircraft generation
+        # (that's input noise, not something the airport's queueing caused),
+        # and excludes non-Success outcomes (a diverted/cancelled aircraft
+        # never landed/took off, so there's nothing to measure).
+        def stats_for(movement_type):
+            delays = [
+                (aircraft.completion_time - aircraft.queue_entry_time).total_seconds() / 60.0
+                for aircraft in obj.aircraft.all()
+                if aircraft.movement_type == movement_type
+                and aircraft.outcome == "Success"
+                and aircraft.completion_time is not None
+                and aircraft.queue_entry_time is not None
+            ]
+            if not delays:
+                return {"average_minutes": None, "max_minutes": None}
+            return {
+                "average_minutes": sum(delays) / len(delays),
+                "max_minutes": max(delays),
+            }
+
+        return {
+            "arrival": stats_for("Arrival"),
+            "departure": stats_for("Departure"),
         }
 
     def get_closure_event_count(self, obj):
