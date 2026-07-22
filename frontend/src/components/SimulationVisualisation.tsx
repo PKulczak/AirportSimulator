@@ -207,8 +207,8 @@ export default function SimulationVisualisation() {
             <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
               Airport Simulation
             </h1>
-            <div className="flex flex-wrap items-center justify-between gap-3 py-2">
-              <div className="flex items-center gap-3">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-2">
+              <div className="flex min-w-0 items-center gap-3 justify-self-start">
                 <Button
                   icon="pi pi-chevron-left"
                   aria-label="Back"
@@ -217,11 +217,11 @@ export default function SimulationVisualisation() {
                 <span className="text-lg font-bold text-slate-900 truncate">{data.name}</span>
               </div>
 
-              <span className="text-lg font-bold text-slate-900">
+              <span className="whitespace-nowrap text-lg font-bold text-slate-900 justify-self-center">
                 Current Time: {Math.round(currentTime)} mins
               </span>
 
-              <div className="flex flex-nowrap items-center gap-3">
+              <div className="flex flex-nowrap items-center gap-3 justify-self-end">
                 <Button
                   icon={isPlaying ? 'pi pi-pause' : 'pi pi-play'}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
