@@ -313,13 +313,10 @@ export default function SimulationVisualisation() {
                       callsign: ac.callsign,
                       startTime: ac.runwayAssignedTime,
                       endTime: ac.completionTime,
+                      movementType: ac.movementType,
                     };
                   }
                 }
-                const activeEmergency =
-                  state.occupiedByAircraftId !== null
-                    ? activeEmergencyByAircraft.get(state.occupiedByAircraftId) ?? null
-                    : null;
                 return (
                   <Runway
                     key={rw.runwayId}
@@ -327,7 +324,6 @@ export default function SimulationVisualisation() {
                     operatingMode={rw.operatingMode}
                     closureReason={state.closureReason}
                     occupancy={occupancy}
-                    activeEmergency={activeEmergency}
                     getSmoothTime={getSmoothTime}
                   />
                 );

@@ -2,13 +2,15 @@ import { useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlaneUp } from '@fortawesome/free-solid-svg-icons';
 import type { OperatingMode } from '../types/runway';
-import type { AircraftEventType } from '../types/visualisation';
-import { EMERGENCY_TYPE_STYLE, OPERATING_MODE_STYLE } from '../functions/replayTheme';
+import { OPERATING_MODE_STYLE } from '../functions/replayTheme';
 
 export interface RunwayOccupancy {
   callsign: string;
   startTime: number;
   endTime: number;
+  /** Drives animation direction: arrivals land left-to-right, departures
+   * take off right-to-left. */
+  movementType: 'Arrival' | 'Departure';
 }
 
 interface RunwayProps {
@@ -17,8 +19,6 @@ interface RunwayProps {
   /** Reason text (e.g. "Snow clearance") when closed, null when available. */
   closureReason: string | null;
   occupancy: RunwayOccupancy | null;
-  /** Active emergency (if any) for the aircraft currently occupying this runway. */
-  activeEmergency: AircraftEventType | null;
   /** Returns the current replay time (minutes), interpolated continuously
    * between ticks — call fresh on every animation frame, don't cache. */
   getSmoothTime: () => number;
@@ -30,9 +30,12 @@ const MAX_TRAVEL_FRACTION = 0.9;
 
 /**
  * Renders one runway as a coloured card (colour keyed to its operating mode,
- * matching the on-screen legend): an identifier badge, a dashed "runway"
- * track with a plane icon that slides along it while occupied, and an
- * emergency dot when the current occupant has an active emergency.
+ * matching the on-screen legend): an identifier badge and a dashed "runway"
+ * track with a plane icon that slides along it while occupied — left-to-right
+ * for an arrival landing, right-to-left for a departure taking off, matching
+ * `occupancy.movementType`. Emergency status is deliberately not shown here —
+ * it's only relevant while an aircraft is queued (see `QueueTable`), not once
+ * it's already on the runway.
  *
  * `closed`/`occupancy` are computed fresh every parent render straight from
  * `deriveRunwayState(events, currentTime, ...)` — there is no locally-mutated
@@ -52,7 +55,6 @@ export default function Runway({
   operatingMode,
   closureReason,
   occupancy,
-  activeEmergency,
   getSmoothTime,
 }: RunwayProps) {
   const closed = closureReason !== null;
@@ -73,7 +75,11 @@ export default function Runway({
           const t = getTime();
           const span = current.endTime - current.startTime;
           const fraction = span > 0 ? Math.min(1, Math.max(0, (t - current.startTime) / span)) : 1;
-          plane.style.left = `${Math.min(fraction, MAX_TRAVEL_FRACTION) * 100}%`;
+          const travel = Math.min(fraction, MAX_TRAVEL_FRACTION) * 100;
+          plane.style.left =
+            current.movementType === 'Departure'
+              ? `${MAX_TRAVEL_FRACTION * 100 - travel}%`
+              : `${travel}%`;
         }
       }
       frameId = requestAnimationFrame(paint);
@@ -104,9 +110,14 @@ export default function Runway({
             <div
               ref={planeRef}
               className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1.5"
-              style={{ left: '0%' }}
+              style={{ left: occupancy.movementType === 'Departure' ? `${MAX_TRAVEL_FRACTION * 100}%` : '0%' }}
             >
-              <FontAwesomeIcon icon={faPlaneUp} className="rotate-90 text-slate-800" />
+              <FontAwesomeIcon
+                icon={faPlaneUp}
+                className={`text-slate-800 ${
+                  occupancy.movementType === 'Departure' ? '-rotate-90' : 'rotate-90'
+                }`}
+              />
               <span className="whitespace-nowrap text-sm font-semibold text-slate-800">
                 {occupancy.callsign}
               </span>
@@ -118,13 +129,6 @@ export default function Runway({
           </span>
         )}
       </div>
-
-      {activeEmergency && (
-        <span
-          className={`h-3 w-3 shrink-0 rounded-full ${EMERGENCY_TYPE_STYLE[activeEmergency].dot}`}
-          title={EMERGENCY_TYPE_STYLE[activeEmergency].label}
-        />
-      )}
     </div>
   );
 }
