@@ -7,7 +7,7 @@ import { Sidebar } from 'primereact/sidebar';
 import { useGet } from '../functions/axios';
 import { useRunways } from '../context/RunwayContext';
 import {
-  deriveRunwayState,
+  deriveRunwayStates,
   eventsUpTo,
   normalizeVisualisation,
   processEvents,
@@ -25,8 +25,9 @@ import SimulationEventLog from './SimulationEventLog';
 import backgroundImage from '../assets/Background.png';
 
 // At 1x, one tick fires per second and advances the sim clock by
-// BASE_STEP_MINUTES; other speeds scale the per-tick step, not the interval,
-// so they stay proportional to this 1x baseline automatically.
+// BASE_STEP_MINUTES. Other speeds scale the tick interval, not the per-tick
+// step — e.g. at 4x, four 1-minute ticks fire per second instead of one
+// 4-minute tick, so the clock always advances in fixed 1-minute increments.
 const TICK_INTERVAL_MS = 1000;
 const BASE_STEP_MINUTES = 1;
 const SPEED_OPTIONS = [0.125, 0.25, 0.5, 1, 2, 4, 8];
@@ -95,8 +96,8 @@ export default function SimulationVisualisation() {
     }
 
     timeoutRef.current = setTimeout(() => {
-      setCurrentTime((prev) => Math.min(prev + BASE_STEP_MINUTES * speed, data.durationMinutes));
-    }, TICK_INTERVAL_MS);
+      setCurrentTime((prev) => Math.min(prev + BASE_STEP_MINUTES, data.durationMinutes));
+    }, TICK_INTERVAL_MS / speed);
 
     return clearScheduledTick;
   }, [isPlaying, speed, data, currentTime, clearScheduledTick]);
@@ -166,6 +167,7 @@ export default function SimulationVisualisation() {
   }
 
   const visibleEvents = eventsUpTo(events, currentTime);
+  const runwayStates = deriveRunwayStates(visibleEvents);
   const aircraftById = new Map(data.aircraft.map((a) => [a.id, a]));
 
   const isEmergencyEvent = (evt: SimulationEvent): evt is EmergencyEvent =>
@@ -298,7 +300,7 @@ export default function SimulationVisualisation() {
           <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-hidden px-4 pb-4 pt-0 lg:grid-cols-3">
             <div className="min-h-0">
               <QueueTable
-                events={events}
+                visibleEvents={visibleEvents}
                 currentTime={currentTime}
                 aircraft={data.aircraft}
                 movementType="Arrival"
@@ -308,7 +310,10 @@ export default function SimulationVisualisation() {
 
             <div className="queue-scroll flex min-h-0 flex-col gap-3 overflow-y-auto">
               {data.runways.map((rw) => {
-                const state = deriveRunwayState(events, currentTime, rw.runwayId);
+                const state = runwayStates.get(rw.runwayId) ?? {
+                  occupiedByAircraftId: null,
+                  closureReason: null,
+                };
                 let occupancy: RunwayOccupancy | null = null;
                 if (state.occupiedByAircraftId !== null) {
                   const ac = aircraftById.get(state.occupiedByAircraftId);
@@ -336,7 +341,7 @@ export default function SimulationVisualisation() {
 
             <div className="min-h-0">
               <QueueTable
-                events={events}
+                visibleEvents={visibleEvents}
                 currentTime={currentTime}
                 aircraft={data.aircraft}
                 movementType="Departure"

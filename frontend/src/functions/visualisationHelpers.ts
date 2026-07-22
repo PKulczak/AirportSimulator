@@ -214,32 +214,42 @@ export interface RunwayState {
 }
 
 /**
- * Pure fold over events up to time `t` for a single runway. Deliberately
+ * Pure fold building every runway's current state in a single pass over an
+ * already-sliced `visibleEvents` prefix (see `eventsUpTo`) — deliberately
  * stateless/derived (not an incremental accumulator) so jumping backwards in
- * time or resetting to t=0 is correct by construction — there is no mutable
+ * time or resetting to t=0 is correct by construction, with no mutable
  * "current occupancy" to forget to clear.
+ *
+ * Computing every runway's state in one pass (rather than the caller looping
+ * runways and re-scanning the whole prefix per runway) matters at high replay
+ * speeds: with N runways this is the difference between one O(events) scan
+ * and N of them every tick, and ticks fire up to 8 times a second at 8x speed.
  */
-export function deriveRunwayState(
-  events: SimulationEvent[],
-  t: number,
-  runwayId: number,
-): RunwayState {
-  let occupiedByAircraftId: number | null = null;
-  let closureReason: string | null = null;
+export function deriveRunwayStates(visibleEvents: SimulationEvent[]): Map<number, RunwayState> {
+  const states = new Map<number, RunwayState>();
 
-  for (const evt of eventsUpTo(events, t)) {
-    if (evt.type === 'runwayOccupy' && evt.runwayId === runwayId) {
-      occupiedByAircraftId = evt.aircraftId;
-    } else if (evt.type === 'runwayVacate' && evt.runwayId === runwayId) {
-      occupiedByAircraftId = null;
-    } else if (evt.type === 'closureStart' && evt.runwayId === runwayId) {
-      closureReason = evt.reason ?? 'Closed';
-    } else if (evt.type === 'closureEnd' && evt.runwayId === runwayId) {
-      closureReason = null;
+  const stateFor = (runwayId: number): RunwayState => {
+    let state = states.get(runwayId);
+    if (!state) {
+      state = { occupiedByAircraftId: null, closureReason: null };
+      states.set(runwayId, state);
+    }
+    return state;
+  };
+
+  for (const evt of visibleEvents) {
+    if (evt.type === 'runwayOccupy') {
+      stateFor(evt.runwayId).occupiedByAircraftId = evt.aircraftId;
+    } else if (evt.type === 'runwayVacate') {
+      stateFor(evt.runwayId).occupiedByAircraftId = null;
+    } else if (evt.type === 'closureStart') {
+      stateFor(evt.runwayId).closureReason = evt.reason ?? 'Closed';
+    } else if (evt.type === 'closureEnd') {
+      stateFor(evt.runwayId).closureReason = null;
     }
   }
 
-  return { occupiedByAircraftId, closureReason };
+  return states;
 }
 
 export interface QueuedAircraft {
@@ -259,12 +269,17 @@ export interface QueuedAircraft {
  * current priority first (any emergency always outranks a normal aircraft,
  * matching the engine's actual selection order — see the brief's "Emergency,
  * then FIFO" rule), then longest-waiting-first among equal priority.
+ *
+ * Takes an already-sliced `visibleEvents` prefix (see `eventsUpTo`) rather
+ * than slicing internally — the caller typically already has this prefix
+ * computed once per tick for other purposes, and re-slicing per queue is
+ * wasted work at high replay speeds where ticks fire several times a second.
  */
-export function deriveQueue(events: SimulationEvent[], t: number): QueuedAircraft[] {
+export function deriveQueue(visibleEvents: SimulationEvent[], t: number): QueuedAircraft[] {
   const queueEntryTimeByAircraft = new Map<number, number>();
   const priorityScoreByAircraft = new Map<number, number>();
 
-  for (const evt of eventsUpTo(events, t)) {
+  for (const evt of visibleEvents) {
     if (evt.type === 'queueEnter') {
       queueEntryTimeByAircraft.set(evt.aircraftId, evt.time);
       priorityScoreByAircraft.set(evt.aircraftId, BASE_PRIORITY);

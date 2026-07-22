@@ -12,7 +12,10 @@ import type {
 } from '../types/visualisation';
 
 interface QueueTableProps {
-  events: SimulationEvent[];
+  /** Events with `time <= currentTime`, already sliced by the caller (see
+   * `eventsUpTo`) — avoids re-slicing the full timeline once per queue on
+   * every replay tick. */
+  visibleEvents: SimulationEvent[];
   currentTime: number;
   aircraft: AircraftVisualisation[];
   movementType: MovementType;
@@ -43,7 +46,7 @@ const MAX_VISIBLE_QUEUE_ROWS = 15;
  * (dark title bar, column headings, monospace flight codes) for a single
  * movement type — arrivals hold to land, departures hold to take off. */
 export default function QueueTable({
-  events,
+  visibleEvents,
   currentTime,
   aircraft,
   movementType,
@@ -63,7 +66,7 @@ export default function QueueTable({
     )
     .sort((a, b) => (b.completionTime as number) - (a.completionTime as number));
 
-  const rows: QueueRow[] = deriveQueue(events, currentTime)
+  const rows: QueueRow[] = deriveQueue(visibleEvents, currentTime)
     .filter((entry) => aircraftById.get(entry.aircraftId)?.movementType === movementType)
     .map((entry, index) => {
       const ac = aircraftById.get(entry.aircraftId);

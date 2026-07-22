@@ -24,10 +24,6 @@ interface RunwayProps {
   getSmoothTime: () => number;
 }
 
-/** Clamp how far along the track the plane icon travels so it never slides
- * out past the runway card's edge. */
-const MAX_TRAVEL_FRACTION = 0.9;
-
 /**
  * Renders one runway as a coloured card (colour keyed to its operating mode,
  * matching the on-screen legend): an identifier badge and a dashed "runway"
@@ -71,15 +67,20 @@ export default function Runway({
       if (plane) {
         if (!current) {
           plane.style.left = '0%';
+          plane.style.transform = 'translateY(-50%)';
         } else {
           const t = getTime();
           const span = current.endTime - current.startTime;
           const fraction = span > 0 ? Math.min(1, Math.max(0, (t - current.startTime) / span)) : 1;
-          const travel = Math.min(fraction, MAX_TRAVEL_FRACTION) * 100;
-          plane.style.left =
-            current.movementType === 'Departure'
-              ? `${MAX_TRAVEL_FRACTION * 100 - travel}%`
-              : `${travel}%`;
+          // Departures travel right-to-left, so their progress runs in reverse.
+          const progress = current.movementType === 'Departure' ? 1 - fraction : fraction;
+          plane.style.left = `${progress * 100}%`;
+          // translateX is a percentage of the plane's OWN width (not the
+          // track's), so this slides its bounding box from flush-left
+          // (0%, translateX(0)) to flush-right (100%, translateX(-100%))
+          // regardless of how wide the callsign text makes it — no fixed
+          // travel cap needed, and it never overflows the track either end.
+          plane.style.transform = `translateY(-50%) translateX(${-progress * 100}%)`;
         }
       }
       frameId = requestAnimationFrame(paint);
@@ -109,8 +110,12 @@ export default function Runway({
             <div className="absolute left-0 right-0 top-1/2 border-t-2 border-dashed border-slate-500/40" />
             <div
               ref={planeRef}
-              className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1.5"
-              style={{ left: occupancy.movementType === 'Departure' ? `${MAX_TRAVEL_FRACTION * 100}%` : '0%' }}
+              className="absolute top-1/2 flex items-center gap-1.5"
+              style={
+                occupancy.movementType === 'Departure'
+                  ? { left: '100%', transform: 'translateY(-50%) translateX(-100%)' }
+                  : { left: '0%', transform: 'translateY(-50%)' }
+              }
             >
               {occupancy.movementType === 'Arrival' && (
                 <span className="whitespace-nowrap text-sm font-semibold text-slate-800">
