@@ -11,6 +11,9 @@ export const operationalStatusSchema = z.enum([
   'EquipmentFailure',
 ]);
 
+/** Mirrors the backend's `SimulationCreationDto.MAX_RUNWAYS` cap. */
+export const MAX_RUNWAYS = 10;
+
 export const simulationFormSchema = z
   .object({
     name: z.string().trim().min(1, 'Name is required').max(120, 'Name is too long'),
@@ -24,7 +27,10 @@ export const simulationFormSchema = z
     maxWaitMinutes: z.number().int().min(1, 'Must be at least 1 minute'),
     aircraftSpeedKnots: z.number().min(50).max(700).optional(),
     includeClosures: z.boolean(),
-    runwayIds: z.array(z.number()).min(1, 'Select at least one runway'),
+    runwayIds: z
+      .array(z.number())
+      .min(1, 'Select at least one runway')
+      .max(MAX_RUNWAYS, `At most ${MAX_RUNWAYS} runways may be selected`),
     runwayModes: z.record(z.string(), operatingModeSchema),
     runwayInitialStatus: z.record(z.string(), operationalStatusSchema),
   })

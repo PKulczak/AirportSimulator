@@ -3,7 +3,7 @@
 This is the single source of truth for what the simulation should do. It merges the
 original client brief (`brief.md`) with the corrections identified against the actual
 implementation (`NewChanges.md`), reworded into one coherent description of the target
-behaviour. Where the two disagreed, this file describes the *intended* behaviour, not
+behaviour. Where the two disagreed, this file describes the _intended_ behaviour, not
 necessarily what's live in the code today — see **Implementation Status** at the bottom
 for what's done vs. still outstanding.
 
@@ -25,6 +25,7 @@ staggered altitudes (1000ft vertical separation per aircraft, per real-world hol
 procedure) waiting for a landing slot.
 
 Aircraft are selected off the holding pattern in this order:
+
 1. **Emergency** — mechanical failure, low fuel, or passenger health issue declared.
 2. **FIFO** — otherwise, whoever joined the holding pattern first.
 
@@ -42,6 +43,7 @@ before the max wait time is reached, the flight is **cancelled**.
 
 Only one aircraft may occupy a runway (including its approach/departure zone) at a
 time. Each runway is configured in one of three modes:
+
 - **Landing only**
 - **Take-off only**
 - **Mixed** — shared between landing and take-off traffic, dividing availability
@@ -54,12 +56,12 @@ closed mixed runway's neighbour to mixed mode to absorb the gap).
 Each runway also has an **operational status**, configurable by the user and mutable
 during a run: `Available`, `Runway Inspection`, `Snow Clearance`, or
 `Equipment Failure`. Random closures (when enabled) pick from these reasons rather than
-a generic "closed" flag, so replay/metrics can distinguish *why* a runway went down.
+a generic "closed" flag, so replay/metrics can distinguish _why_ a runway went down.
 
 ### Scheduling — when aircraft actually show up
 
 Aircraft are scheduled at evenly-spaced target times (`60 / rate_per_hour` minutes
-apart, separately for arrivals and departures). The time an aircraft *actually* enters
+apart, separately for arrivals and departures). The time an aircraft _actually_ enters
 the model is that target jittered by a Normal distribution (mean 0, std dev 5 minutes),
 representing ordinary real-world weather/schedule variability. The clean, un-jittered
 target is what "scheduled time" means throughout the system — it's the baseline every
@@ -106,14 +108,14 @@ time.
 
 ## Input parameters
 
-| Parameter | Range / notes |
-|---|---|
-| Available runways | 1–10 |
-| Inbound flow (arrivals) | e.g. 15/hour |
-| Outbound flow (departures) | e.g. 15/hour |
-| Max wait time | Configurable, default 30 minutes — the threshold beyond which an aircraft is diverted/cancelled |
-| Aircraft speed | Configurable, single constant across the run |
-| Random closures | On/off toggle |
+| Parameter                  | Range / notes                                                                                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Available runways          | 1–10 selected per simulation, enforced at creation (the master runway list can hold more than 10 — extra runways just aren't all usable in a single run) |
+| Inbound flow (arrivals)    | e.g. 15/hour                                                                                                                                             |
+| Outbound flow (departures) | e.g. 15/hour                                                                                                                                             |
+| Max wait time              | Configurable, default 30 minutes — the threshold beyond which an aircraft is diverted/cancelled                                                          |
+| Aircraft speed             | Configurable, single constant across the run                                                                                                             |
+| Random closures            | On/off toggle                                                                                                                                            |
 
 ## Data tracked
 
@@ -135,7 +137,7 @@ joining a queue, aren't represented.
 
 ## User controls
 
-- **At creation**: for each runway, its operating mode *and* its initial operational
+- **At creation**: for each runway, its operating mode _and_ its initial operational
   status (so a scenario can start with a runway already down for inspection, not just
   rely on random closures during the run).
 - **During replay**: play/pause, speed (0.125x–8x), scrub to any point in time, toggle
@@ -184,27 +186,3 @@ those are two different numbers and both matter.
 - **Visual representation** of aircraft and queues — **implemented** alongside replay.
 - Statistical modelling of runway inspections/mechanical failures/emergencies as
   probabilistic events — **implemented** for aircraft emergencies and runway closures.
-
-## Implementation status
-
-- ✅ **Done**: evenly-spaced scheduling with Gaussian jitter around the target time
-  (replacing an earlier Poisson-process approximation).
-- ✅ **Done**: uniform(20–60 min) fuel model with a hard 10-minute divert threshold
-  (replacing an earlier wider Normal-distributed fuel model).
-- ✅ **Done**: delay metric (queue join → actual landing/take-off, Success outcomes
-  only, split by movement type) on the results/detail page.
-- ✅ **Done**: max concurrent queue depth metric (peak simultaneous occupancy, split
-  by movement type) on the results/detail page.
-- ✅ **Done**: runway operational status as a creation-time user control (a runway can
-  be started in any non-`Available` status; it's excluded from the run and a synthetic
-  closure event records why).
-- ✅ **Done**: 4-value operational status enum (`Available`/`Runway Inspection`/
-  `Snow Clearance`/`Equipment Failure`) with named closure reasons on every closure event
-  (random closures and "closed at start"), replacing the earlier binary Open/Closed +
-  generic "Random closure" text.
-- ✅ **Done**: priority-escalation/emergency reordering is arrivals-only — mechanical
-  failure and passenger-health checks are no longer rolled for departures, so the
-  take-off queue is genuinely pure FIFO and a departure's emergency status is always
-  `None` (fuel-based emergencies were already arrivals-only).
-- 🔲 **Outstanding**: two-digit runway numbering (currently paired-end identifiers like
-  "09L/27R") and seeding enough runways to reach the 1–10 range.

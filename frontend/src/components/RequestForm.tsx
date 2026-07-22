@@ -11,6 +11,7 @@ import { useRunways } from '../context/RunwayContext';
 import { usePost } from '../functions/axios';
 import {
   defaultSimulationFormValues,
+  MAX_RUNWAYS,
   simulationFormSchema,
   toCreateSimulationRequest,
   type SimulationFormValues,
@@ -59,6 +60,9 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
 
   const toggleRunway = (runwayId: number, checked: boolean) => {
     if (checked) {
+      if (selectedRunwayIds.length >= MAX_RUNWAYS) {
+        return;
+      }
       setValue('runwayIds', [...selectedRunwayIds, runwayId], { shouldValidate: true });
       if (!runwayModes[String(runwayId)]) {
         setValue(
@@ -249,11 +253,17 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
       </div>
 
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-slate-700">Runways</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-slate-700">Runways</p>
+          <p className="text-xs text-slate-500">
+            {selectedRunwayIds.length} / {MAX_RUNWAYS} selected
+          </p>
+        </div>
         {runwaysLoading && <p className="text-sm text-slate-500">Loading runways...</p>}
         <div className="flex flex-col gap-2">
           {runways.map((runway) => {
             const checked = selectedRunwayIds.includes(runway.id);
+            const capReached = selectedRunwayIds.length >= MAX_RUNWAYS;
             return (
               <div
                 key={runway.id}
@@ -263,6 +273,7 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
                   inputId={`runway-${runway.id}`}
                   checked={checked}
                   onChange={(e) => toggleRunway(runway.id, e.checked ?? false)}
+                  disabled={!checked && capReached}
                 />
                 <label htmlFor={`runway-${runway.id}`} className="flex-1 text-sm text-slate-700">
                   {runway.identifier}

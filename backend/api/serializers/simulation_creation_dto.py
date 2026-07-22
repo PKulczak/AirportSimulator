@@ -29,10 +29,16 @@ class SimulationCreationDto(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "status", "created_at"]
 
+    MAX_RUNWAYS = 10
+
     def validate_runways(self, runways):
         if len(runways) == 0:
             raise serializers.ValidationError(
                 "At least one runway must be selected."
+            )
+        if len(runways) > self.MAX_RUNWAYS:
+            raise serializers.ValidationError(
+                f"At most {self.MAX_RUNWAYS} runways may be selected."
             )
         runway_ids = [runway["runway_id"] for runway in runways]
         if len(runway_ids) != len(set(runway_ids)):

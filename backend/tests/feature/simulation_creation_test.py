@@ -2,7 +2,7 @@ import dramatiq
 from django.urls import reverse
 from rest_framework import status
 
-from api.models import Simulation, SimulationRunway
+from api.models import Runway, Simulation, SimulationRunway
 from tests.base_test import BaseFeatureTest
 
 
@@ -51,6 +51,39 @@ class SimulationCreationTest(BaseFeatureTest):
         self.assertEqual(
             SimulationRunway.objects.filter(simulation=simulation).count(), 2
         )
+
+    @staticmethod
+    def _make_runways(count, prefix):
+        return [
+            Runway.objects.create(
+                identifier=f"{prefix}{i}",
+                heading_degrees=90,
+                length_metres=3000,
+                is_active=True,
+            )
+            for i in range(count)
+        ]
+
+    def test_create_simulation_accepts_exactly_ten_runways(self):
+        runways = self._make_runways(10, "CAP10-")
+        payload = self._payload(
+            runways=[
+                {"runwayId": runway.id, "operatingMode": "Mixed"} for runway in runways
+            ]
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_rejects_more_than_ten_runways(self):
+        runways = self._make_runways(11, "CAP11-")
+        payload = self._payload(
+            runways=[
+                {"runwayId": runway.id, "operatingMode": "Mixed"} for runway in runways
+            ]
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("runways", response.json())
 
     def test_create_simulation_defaults_runway_operational_status_to_available(self):
         response = self.client.post(

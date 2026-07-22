@@ -30,3 +30,11 @@ class RunwayListTest(BaseFeatureTest):
         item = next(i for i in body if i["identifier"] == "TEST-SHAPE-CHECK")
         for key in ["id", "identifier", "headingDegrees", "lengthMetres", "isActive"]:
             self.assertIn(key, item)
+
+    def test_seed_migration_seeds_ten_two_digit_numbered_runways(self):
+        seeded = Runway.objects.filter(identifier__in=[f"{i:02d}" for i in range(1, 11)])
+
+        self.assertEqual(seeded.count(), 10)
+        for runway in seeded:
+            self.assertEqual(runway.heading_degrees, int(runway.identifier) * 10)
+            self.assertTrue(runway.is_active)
