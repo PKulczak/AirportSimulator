@@ -112,15 +112,22 @@ export default function Runway({
               className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1.5"
               style={{ left: occupancy.movementType === 'Departure' ? `${MAX_TRAVEL_FRACTION * 100}%` : '0%' }}
             >
+              {occupancy.movementType === 'Arrival' && (
+                <span className="whitespace-nowrap text-sm font-semibold text-slate-800">
+                  {occupancy.callsign}
+                </span>
+              )}
               <FontAwesomeIcon
                 icon={faPlaneUp}
                 className={`text-slate-800 ${
                   occupancy.movementType === 'Departure' ? '-rotate-90' : 'rotate-90'
                 }`}
               />
-              <span className="whitespace-nowrap text-sm font-semibold text-slate-800">
-                {occupancy.callsign}
-              </span>
+              {occupancy.movementType === 'Departure' && (
+                <span className="whitespace-nowrap text-sm font-semibold text-slate-800">
+                  {occupancy.callsign}
+                </span>
+              )}
             </div>
           </>
         ) : (
