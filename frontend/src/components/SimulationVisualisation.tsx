@@ -268,7 +268,9 @@ export default function SimulationVisualisation() {
                     key={item.label}
                     className="flex max-w-[33.333%] items-center gap-1 text-[10px] font-medium text-slate-600"
                   >
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${item.dot}`} />
+                    <span
+                      className={`h-4 w-4 shrink-0 rounded-sm border border-black ${item.dot}`}
+                    />
                     <span className="inline-block leading-tight">{item.label}</span>
                   </span>
                 ))}
@@ -280,7 +282,9 @@ export default function SimulationVisualisation() {
                     key={item.mode}
                     className="flex max-w-[33.333%] items-center gap-1 text-[10px] font-medium text-slate-600"
                   >
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${item.bg}`} />
+                    <span
+                      className={`h-4 w-4 shrink-0 rounded-sm border border-black ${item.bg}`}
+                    />
                     <span className="inline-block leading-tight">{item.label}</span>
                   </span>
                 ))}
