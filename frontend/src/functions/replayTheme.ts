@@ -15,12 +15,29 @@ export const MODE_LEGEND = (Object.keys(OPERATING_MODE_STYLE) as OperatingMode[]
 }));
 
 /** FuelCritical is an escalation of LowFuel, not a distinct legend category —
- * both map to the same "Low Fuel" swatch. */
-export const EMERGENCY_TYPE_STYLE: Record<AircraftEventType, { label: string; dot: string }> = {
-  LowFuel: { label: 'Low Fuel', dot: 'bg-alert-lowfuel' },
-  FuelCritical: { label: 'Low Fuel', dot: 'bg-alert-lowfuel' },
-  MechanicalFailure: { label: 'Mechanical Failure', dot: 'bg-alert-mechanical' },
-  PassengerHealth: { label: 'Passenger Health', dot: 'bg-alert-passenger' },
+ * both map to the same "Low Fuel" swatch. `glowColor` is a raw CSS colour
+ * (not a Tailwind class) since it's consumed via the `--glow-color` custom
+ * property that drives the `.emergency-glow` flicker animation. */
+export const EMERGENCY_TYPE_STYLE: Record<
+  AircraftEventType,
+  { label: string; dot: string; glowColor: string }
+> = {
+  LowFuel: { label: 'Low Fuel', dot: 'bg-alert-lowfuel', glowColor: 'var(--color-alert-lowfuel)' },
+  FuelCritical: {
+    label: 'Low Fuel',
+    dot: 'bg-alert-lowfuel',
+    glowColor: 'var(--color-alert-lowfuel)',
+  },
+  MechanicalFailure: {
+    label: 'Mechanical Failure',
+    dot: 'bg-alert-mechanical',
+    glowColor: 'var(--color-alert-mechanical)',
+  },
+  PassengerHealth: {
+    label: 'Passenger Health',
+    dot: 'bg-alert-passenger',
+    glowColor: 'var(--color-alert-passenger)',
+  },
 };
 
 export const EMERGENCY_LEGEND = [

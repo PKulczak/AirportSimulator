@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, type CSSProperties } from 'react';
 import { OverlayPanel } from 'primereact/overlaypanel';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGasPump, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
@@ -37,6 +37,7 @@ interface QueueRow {
 }
 
 const HOLDING_ALTITUDE_STEP_FEET = 1000;
+const MAX_VISIBLE_QUEUE_ROWS = 15;
 
 /** Queue panel styled like an airport terminal's flight-information board
  * (dark title bar, column headings, monospace flight codes) for a single
@@ -79,6 +80,9 @@ export default function QueueTable({
           : {}),
       };
     });
+
+  const visibleRows = rows.slice(0, MAX_VISIBLE_QUEUE_ROWS);
+  const overflowCount = rows.length - visibleRows.length;
 
   const label = isArrival ? 'Holding Queue' : 'Takeoff Queue';
   const originLabel = isArrival ? 'From' : 'To';
@@ -131,19 +135,21 @@ export default function QueueTable({
         {rows.length === 0 && (
           <p className="p-4 text-sm text-slate-500">No {movementType.toLowerCase()}s currently queued</p>
         )}
-        {rows.map((row) => {
+        {visibleRows.map((row) => {
           const emergency = activeEmergencyByAircraft.get(row.aircraftId);
           return (
             <div
               key={row.aircraftId}
-              className="flex items-center gap-3 px-4 py-2 even:bg-white/5"
+              className={`flex items-center gap-3 px-4 py-2 even:bg-white/5 ${
+                emergency ? 'emergency-glow' : ''
+              }`}
+              style={
+                emergency
+                  ? ({ '--glow-color': EMERGENCY_TYPE_STYLE[emergency].glowColor } as CSSProperties)
+                  : undefined
+              }
+              title={emergency ? EMERGENCY_TYPE_STYLE[emergency].label : undefined}
             >
-              {emergency && (
-                <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${EMERGENCY_TYPE_STYLE[emergency].dot}`}
-                  title={EMERGENCY_TYPE_STYLE[emergency].label}
-                />
-              )}
               <div className="min-w-0 flex-1">
                 <p className="truncate font-mono text-xs font-semibold text-brand-accent">
                   {row.callsign}
@@ -168,6 +174,12 @@ export default function QueueTable({
           );
         })}
       </div>
+
+      {overflowCount > 0 && (
+        <div className="shrink-0 border-t border-slate-700 bg-slate-900 px-4 py-1.5 text-center text-xs font-semibold text-slate-400">
+          +{overflowCount} more
+        </div>
+      )}
     </div>
   );
 }

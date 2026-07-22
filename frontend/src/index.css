@@ -151,3 +151,19 @@ body {
 .queue-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Emergency glow: flickers a row's background between the dark queue
+ * background and the emergency's colour (set per-row via the --glow-color
+ * custom property, since the colour varies by emergency type). */
+@keyframes emergency-glow {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: var(--glow-color, transparent);
+  }
+}
+.emergency-glow {
+  animation: emergency-glow 1.2s ease-in-out infinite;
+}
