@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { OverlayPanel } from 'primereact/overlaypanel';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGasPump, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
 import { deriveQueue } from '../functions/visualisationHelpers';
@@ -48,6 +50,17 @@ export default function QueueTable({
 }: QueueTableProps) {
   const aircraftById = new Map(aircraft.map((a) => [a.id, a]));
   const isArrival = movementType === 'Arrival';
+  const removedListRef = useRef<OverlayPanel>(null);
+
+  const removedAircraft = aircraft
+    .filter(
+      (ac) =>
+        ac.movementType === movementType &&
+        (ac.outcome === 'Diverted' || ac.outcome === 'Cancelled') &&
+        ac.completionTime !== null &&
+        ac.completionTime <= currentTime,
+    )
+    .sort((a, b) => (b.completionTime as number) - (a.completionTime as number));
 
   const rows: QueueRow[] = deriveQueue(events, currentTime)
     .filter((entry) => aircraftById.get(entry.aircraftId)?.movementType === movementType)
@@ -73,14 +86,39 @@ export default function QueueTable({
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 shadow-sm">
       <div className="flex items-center gap-3 border-b-4 border-brand-accent bg-slate-900 px-4 py-3">
-        <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+        <button
+          type="button"
+          onClick={(e) => removedListRef.current?.toggle(e)}
+          aria-label={`${isArrival ? 'Diverted' : 'Cancelled'} aircraft`}
+          className="relative flex h-6 w-6 shrink-0 items-center justify-center"
+        >
           <FontAwesomeIcon icon={faTriangleExclamation} className="text-brand-accent" />
           <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-            {rows.length}
+            {removedAircraft.length}
           </span>
-        </div>
+        </button>
         <h2 className="text-sm font-bold uppercase tracking-wide text-white">{label}</h2>
       </div>
+
+      <OverlayPanel ref={removedListRef}>
+        <div className="flex max-h-72 w-64 flex-col gap-2 overflow-y-auto">
+          <h3 className="text-sm font-bold text-slate-800">
+            {isArrival ? 'Diverted' : 'Cancelled'} aircraft ({removedAircraft.length})
+          </h3>
+          {removedAircraft.length === 0 ? (
+            <p className="text-sm text-slate-500">None so far.</p>
+          ) : (
+            removedAircraft.map((ac) => (
+              <div key={ac.id} className="border-b border-slate-100 pb-1 last:border-b-0">
+                <p className="font-mono text-xs font-semibold text-slate-800">{ac.callsign}</p>
+                <p className="text-xs text-slate-500">
+                  {ac.operator} &middot; {originLabel} {ac.originDestination} &middot; {ac.outcome}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </OverlayPanel>
 
       <div className="flex items-center gap-3 border-b border-slate-700 bg-black px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
         <span className="flex-1">Flight</span>
