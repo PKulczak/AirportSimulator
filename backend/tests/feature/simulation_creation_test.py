@@ -52,7 +52,7 @@ class SimulationCreationTest(BaseFeatureTest):
             SimulationRunway.objects.filter(simulation=simulation).count(), 2
         )
 
-    def test_create_simulation_defaults_runway_operational_status_to_open(self):
+    def test_create_simulation_defaults_runway_operational_status_to_available(self):
         response = self.client.post(
             reverse("simulation-list"), self._payload(), format="json"
         )
@@ -63,7 +63,7 @@ class SimulationCreationTest(BaseFeatureTest):
                 "operational_status", flat=True
             )
         )
-        self.assertEqual(statuses, {SimulationRunway.OperationalStatus.OPEN})
+        self.assertEqual(statuses, {SimulationRunway.OperationalStatus.AVAILABLE})
 
     def test_create_simulation_persists_runway_operational_status(self):
         payload = self._payload(
@@ -71,7 +71,7 @@ class SimulationCreationTest(BaseFeatureTest):
                 {
                     "runwayId": self.runways[0].id,
                     "operatingMode": "Mixed",
-                    "operationalStatus": "Closed",
+                    "operationalStatus": "SnowClearance",
                 },
                 {"runwayId": self.runways[1].id, "operatingMode": "Mixed"},
             ]
@@ -85,8 +85,10 @@ class SimulationCreationTest(BaseFeatureTest):
         sr_open = SimulationRunway.objects.get(
             simulation=simulation, runway=self.runways[1]
         )
-        self.assertEqual(sr_closed.operational_status, SimulationRunway.OperationalStatus.CLOSED)
-        self.assertEqual(sr_open.operational_status, SimulationRunway.OperationalStatus.OPEN)
+        self.assertEqual(
+            sr_closed.operational_status, SimulationRunway.OperationalStatus.SNOW_CLEARANCE
+        )
+        self.assertEqual(sr_open.operational_status, SimulationRunway.OperationalStatus.AVAILABLE)
 
     def test_create_simulation_defaults_aircraft_speed_from_settings(self):
         from django.conf import settings

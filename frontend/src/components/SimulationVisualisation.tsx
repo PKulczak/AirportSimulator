@@ -325,7 +325,7 @@ export default function SimulationVisualisation() {
                     key={rw.runwayId}
                     identifier={rw.identifier}
                     operatingMode={rw.operatingMode}
-                    closed={state.closed}
+                    closureReason={state.closureReason}
                     occupancy={occupancy}
                     activeEmergency={activeEmergency}
                     getSmoothTime={getSmoothTime}

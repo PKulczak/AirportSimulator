@@ -69,11 +69,11 @@ class SimulationRunner:
         )
         simulation_runways = [
             sr for sr in all_simulation_runways
-            if sr.operational_status == SimulationRunway.OperationalStatus.OPEN
+            if sr.operational_status == SimulationRunway.OperationalStatus.AVAILABLE
         ]
         closed_at_start = [
             sr for sr in all_simulation_runways
-            if sr.operational_status != SimulationRunway.OperationalStatus.OPEN
+            if sr.operational_status != SimulationRunway.OperationalStatus.AVAILABLE
         ]
         if closed_at_start:
             SimulationRunwayEvent.objects.bulk_create(
@@ -82,7 +82,7 @@ class SimulationRunner:
                         simulation_runway=sr,
                         event_type=SimulationRunwayEvent.EventType.CLOSED,
                         occurred_at=base_time,
-                        reason="Closed at simulation start",
+                        reason=f"{sr.get_operational_status_display()} at simulation start",
                     )
                     for sr in closed_at_start
                 ]
@@ -201,8 +201,8 @@ class SimulationRunner:
         state = {"done": False}
         env.process(
             self._emergency_event_process(
-                env, rng, aircraft, tracker, state, is_arrival, fuel_deadline,
-                queue_entry_sim_time, wait_deadline, to_datetime, get_proc,
+                env, rng, aircraft, tracker, state, is_arrival,
+                queue_entry_sim_time, to_datetime, get_proc,
             )
         )
 
@@ -316,56 +316,55 @@ class SimulationRunner:
     # -- emergencies --------------------------------------------------------
 
     def _emergency_event_process(
-        self, env, rng, aircraft, tracker, state, is_arrival, fuel_deadline,
-        queue_entry_sim_time, wait_deadline, to_datetime, get_proc,
+        self, env, rng, aircraft, tracker, state, is_arrival,
+        queue_entry_sim_time, to_datetime, get_proc,
     ):
-        fired_low_fuel = False
-        fired_fuel_critical = False
+        # Mechanical-failure/passenger-health emergencies (and all priority
+        # escalation) are arrivals-only: a departure in the take-off queue
+        # never has an emergency status and is never reordered ahead of other
+        # departures — the take-off queue is pure FIFO.
+        if not is_arrival:
+            return
 
-        if is_arrival:
-            low_fuel_at = fuel_deadline * constants.LOW_FUEL_THRESHOLD_FRACTION
-            critical_fuel_at = fuel_deadline * constants.FUEL_CRITICAL_THRESHOLD_FRACTION
+        # Elapsed queue time at which remaining fuel hits each fixed checkpoint
+        # (remaining = initial - elapsed), not a fraction of some derived
+        # budget — a simple, verifiable rule independent of max-wait/fuel mix.
+        low_fuel_at = aircraft.initial_fuel_minutes - constants.LOW_FUEL_REMAINING_MINUTES
+        critical_fuel_at = (
+            aircraft.initial_fuel_minutes - constants.FUEL_CRITICAL_REMAINING_MINUTES
+        )
+        schedule = [(low_fuel_at, "LowFuel"), (critical_fuel_at, "FuelCritical")]
 
-            for threshold_time, event_type, flag_name in (
-                (low_fuel_at, "LowFuel", "fired_low_fuel"),
-                (critical_fuel_at, "FuelCritical", "fired_fuel_critical"),
-            ):
-                if state["done"]:
-                    return
-                delay = threshold_time - (env.now - queue_entry_sim_time)
-                if delay <= constants.TIME_EPSILON_MINUTES:
-                    continue
+        # Mechanical failure and passenger health are each an independent
+        # once-per-aircraft coin flip, declared as soon as the aircraft joins
+        # the holding pattern (threshold 0) rather than at a random future
+        # point in its wait — a random future time could land after the
+        # aircraft has already been assigned a runway and finalized, silently
+        # dropping the roll and pulling the realized rate well below the
+        # configured probability.
+        if rng.random() < constants.MECHANICAL_FAILURE_PROBABILITY:
+            schedule.append((0.0, "MechanicalFailure"))
+        if rng.random() < constants.PASSENGER_HEALTH_PROBABILITY:
+            schedule.append((0.0, "PassengerHealth"))
+
+        schedule.sort(key=lambda entry: entry[0])
+
+        for threshold_time, event_type in schedule:
+            if state["done"]:
+                return
+            delay = threshold_time - (env.now - queue_entry_sim_time)
+            # A due-or-overdue threshold (including two thresholds landing at
+            # the same simulated instant) fires immediately rather than being
+            # dropped — only a genuinely future delay needs a timeout.
+            if delay > constants.TIME_EPSILON_MINUTES:
                 try:
                     yield env.timeout(delay)
                 except simpy.Interrupt:
                     return
                 if state["done"]:
                     return
-                self._record_emergency(aircraft, event_type, tracker, to_datetime, env)
-                self._interrupt(get_proc())
-
-        # Probabilistic mechanical-failure / passenger-health checks for the
-        # remainder of the wait, applicable to both movement types.
-        while not state["done"]:
-            elapsed = env.now - queue_entry_sim_time
-            remaining = wait_deadline - elapsed
-            if remaining <= constants.TIME_EPSILON_MINUTES:
-                return
-            check_in = min(remaining, constants.EMERGENCY_EVENT_CHECK_INTERVAL_MINUTES)
-            try:
-                yield env.timeout(check_in)
-            except simpy.Interrupt:
-                continue
-            if state["done"]:
-                return
-            if rng.random() < constants.EMERGENCY_EVENT_PROBABILITY_PER_CHECK:
-                event_type = (
-                    "MechanicalFailure"
-                    if rng.random() < constants.MECHANICAL_FAILURE_PROBABILITY_WEIGHT
-                    else "PassengerHealth"
-                )
-                self._record_emergency(aircraft, event_type, tracker, to_datetime, env)
-                self._interrupt(get_proc())
+            self._record_emergency(aircraft, event_type, tracker, to_datetime, env)
+            self._interrupt(get_proc())
 
     @staticmethod
     def _interrupt(proc):

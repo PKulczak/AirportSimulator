@@ -23,6 +23,9 @@
   --color-alert-lowfuel: #f6d743;
   --color-alert-mechanical: #e5533b;
   --color-alert-passenger: #fdc261;
+  --color-status-inspection: #f59e0b;
+  --color-status-snow: #38bdf8;
+  --color-status-equipment: #ef4444;
 }
 
 :root {

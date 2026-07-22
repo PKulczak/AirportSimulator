@@ -11,5 +11,5 @@ class SimulationRunwayCreationDto(serializers.Serializer):
     operational_status = serializers.ChoiceField(
         choices=SimulationRunway.OperationalStatus.choices,
         required=False,
-        default=SimulationRunway.OperationalStatus.OPEN,
+        default=SimulationRunway.OperationalStatus.AVAILABLE,
     )

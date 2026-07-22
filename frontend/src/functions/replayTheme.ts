@@ -1,4 +1,4 @@
-import type { OperatingMode } from '../types/runway';
+import type { OperatingMode, OperationalStatus } from '../types/runway';
 import type { AircraftEventType } from '../types/visualisation';
 
 /** Shared colour/label mapping so the legend, runway cards, and queue rows
@@ -28,3 +28,22 @@ export const EMERGENCY_LEGEND = [
   { label: 'Mechanical Failure', dot: 'bg-alert-mechanical' },
   { label: 'Passenger Health', dot: 'bg-alert-passenger' },
 ];
+
+/** Closed-reason colour/label mapping shared by the runway card, the runway
+ * stats table, and the closure legend — `Available` has no swatch since it's
+ * the "not closed" state and never rendered as a closure reason. */
+export const OPERATIONAL_STATUS_STYLE: Record<
+  OperationalStatus,
+  { label: string; dot: string }
+> = {
+  Available: { label: 'Available', dot: 'bg-emerald-500' },
+  RunwayInspection: { label: 'Runway Inspection', dot: 'bg-status-inspection' },
+  SnowClearance: { label: 'Snow Clearance', dot: 'bg-status-snow' },
+  EquipmentFailure: { label: 'Equipment Failure', dot: 'bg-status-equipment' },
+};
+
+export const CLOSURE_REASON_LEGEND = (
+  Object.keys(OPERATIONAL_STATUS_STYLE) as OperationalStatus[]
+)
+  .filter((status) => status !== 'Available')
+  .map((status) => ({ status, ...OPERATIONAL_STATUS_STYLE[status] }));

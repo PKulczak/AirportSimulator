@@ -23,9 +23,10 @@ interface QueueRow {
   operator: string;
   originDestination: string;
   /** Holding-pattern altitude (arrivals only): the highest-priority aircraft
-   * (longest waiting, first in the queue) holds at 1000ft, each aircraft
-   * behind it stacked 1000ft higher. Departures are grounded awaiting a
-   * runway slot, so altitude doesn't apply to them. */
+   * (an active emergency always outranks a normal aircraft; longest-waiting
+   * breaks ties) holds at 1000ft, each aircraft behind it stacked 1000ft
+   * higher. Departures are grounded awaiting a runway slot, so altitude
+   * doesn't apply to them. */
   altitudeFeet?: number;
   /** Fuel burnt off while holding (arrivals only) — departures are grounded
    * with engines idling, not burning through holding fuel, so this doesn't

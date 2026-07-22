@@ -78,6 +78,32 @@ verify the change actually took effect against a live request/task (e.g. `curl` 
 relevant endpoint or create a real simulation) — a clean restart proves the process is
 new, not that the specific behavior you changed is now reachable.
 
+**A `*dramatiq*` filter still isn't the full picture.** Each `dramatiq --processes N`
+worker further spawns its own `multiprocessing.spawn_main` child process(es) on Windows —
+and those children's command line is just
+`python.exe -c "from multiprocessing.spawn import spawn_main; ..." --multiprocessing-fork`,
+containing *no* mention of "dramatiq" at all. `taskkill //PID ... //F` on the parent does
+not reliably reap these children: they can survive the kill, keep their Redis connection
+open, and keep consuming/acking messages from the queue as a live (but completely
+unmanaged) worker — indistinguishable from a real worker except that it's now running
+whatever code was current *when it was spawned*, hours ago. This caused a real incident:
+after several restarts across a long session, simulations started completing with every
+aircraft Diverted/Cancelled (zero ever assigned to a runway) even though the current code,
+called directly, worked correctly — six orphaned `spawn_main` processes from three
+restarts earlier were still silently answering some fraction of new tasks. They were
+invisible to every `*dramatiq*`-filtered process listing and only surfaced by finding
+every process with a live TCP connection to the Redis broker host, independent of its
+command line:
+
+```
+powershell -Command "Get-NetTCPConnection -RemoteAddress <redis-host-ip> | Select-Object OwningProcess -Unique | ForEach-Object { Get-Process -Id $_.OwningProcess | Select-Object Id, Path }"
+```
+
+If simulation outcomes look wrong (e.g. everything Diverted/Cancelled) even right after a
+restart that looked clean, check this before suspecting the code — the resolution is the
+same as always: kill every one of them and confirm the connection list is empty, not just
+the process list.
+
 ## Common commands
 
 Backend (run from `backend/`):

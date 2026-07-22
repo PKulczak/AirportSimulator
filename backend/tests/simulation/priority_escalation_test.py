@@ -61,11 +61,10 @@ def test_low_fuel_and_fuel_critical_fire_before_forced_diversion():
         operating_mode=SimulationRunway.OperatingMode.MIXED,
     )
 
-    # Low but non-zero fuel: the aircraft should get LowFuel (@ 50% of its
-    # wait-tolerance budget) and FuelCritical (@ 80%) events, then a forced
-    # Diverted once remaining fuel would drop below the forced-divert
-    # reserve (@ fuel_deadline = initial_fuel_minutes - reserve) — well
-    # before max_wait_minutes.
+    # 60 minutes of fuel: LowFuel fires once remaining fuel hits 20 minutes
+    # (elapsed 40), FuelCritical once it hits 15 (elapsed 45), then a forced
+    # Diverted once remaining fuel would drop below the 10-minute forced-divert
+    # reserve (elapsed 50) — well before max_wait_minutes.
     aircraft = helper.create_aircraft(
         simulation=simulation,
         movement_type=Aircraft.MovementType.ARRIVAL,
@@ -106,15 +105,82 @@ def test_low_fuel_and_fuel_critical_fire_before_forced_diversion():
     env.run(until=100)
 
     aircraft.refresh_from_db()
-    event_types = list(
+    events = list(
+        AircraftEvent.objects.filter(aircraft=aircraft).order_by("occurred_at")
+    )
+    event_types = [e.event_type for e in events]
+    assert "LowFuel" in event_types
+    assert "FuelCritical" in event_types
+    # LowFuel (20 min remaining) must fire strictly before FuelCritical
+    # (15 min remaining), which must fire strictly before the forced divert
+    # (10 min remaining) — the fixed-checkpoint escalation order.
+    assert event_types.index("LowFuel") < event_types.index("FuelCritical")
+    assert aircraft.outcome == Aircraft.Outcome.DIVERTED
+    assert aircraft.was_success is False
+
+
+@pytest.mark.django_db
+def test_low_fuel_fires_at_fixed_twenty_minutes_remaining():
+    helper = BaseFeatureTest()
+    simulation = helper.create_simulations(
+        1, max_wait_minutes=300, duration_minutes=300, random_seed=6
+    )
+    runway = helper.create_runways(1)[0]
+    simulation_runway = helper.create_simulation_runway(
+        simulation=simulation,
+        runway=runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+
+    # 45 minutes of fuel: LowFuel (20 min remaining) should fire at elapsed
+    # 25, well before FuelCritical (15 min remaining, elapsed 30) or the
+    # forced-divert reserve (10 min remaining, elapsed 35).
+    aircraft = helper.create_aircraft(
+        simulation=simulation,
+        movement_type=Aircraft.MovementType.ARRIVAL,
+        initial_fuel_minutes=45,
+        scheduled_time=timezone.now(),
+    )
+
+    env = simpy.Environment()
+    wrapper = SimulationRunwayWrapper(env, simulation_runway)
+
+    def blocker():
+        req = wrapper.resource.request(priority=0)
+        yield req
+        yield env.timeout(300)
+
+    env.process(blocker())
+
+    runner = SimulationRunner()
+    operation_minutes = runner._operation_minutes(simulation.aircraft_speed_knots)
+
+    def to_datetime(now):
+        return timezone.now()
+
+    runner._spawn_aircraft_process(
+        env,
+        np.random.default_rng(6),
+        simulation,
+        aircraft,
+        [wrapper],
+        0,
+        to_datetime,
+        operation_minutes,
+    )
+
+    # Stop just after the LowFuel threshold (elapsed 25) but before
+    # FuelCritical (elapsed 30) to prove LowFuel fires exactly at its own
+    # fixed checkpoint, not at some fraction-derived time.
+    env.run(until=26)
+
+    event_types = set(
         AircraftEvent.objects.filter(aircraft=aircraft).values_list(
             "event_type", flat=True
         )
     )
     assert "LowFuel" in event_types
-    assert "FuelCritical" in event_types
-    assert aircraft.outcome == Aircraft.Outcome.DIVERTED
-    assert aircraft.was_success is False
+    assert "FuelCritical" not in event_types
 
 
 @pytest.mark.django_db
@@ -175,3 +241,210 @@ def test_departure_never_receives_fuel_events():
     assert "LowFuel" not in event_types
     assert "FuelCritical" not in event_types
     assert aircraft.outcome == Aircraft.Outcome.CANCELLED
+
+
+class _AlwaysFireRng:
+    """Stub rng whose `.random()` always returns 0.0, so any probabilistic
+    "should an emergency fire?" check always evaluates true. Used to prove a
+    departure's emergency-event process never even performs that roll, rather
+    than relying on a real rng seed happening not to fire."""
+
+    def random(self):
+        return 0.0
+
+
+class _ForceEmergencyRng:
+    """Stub rng whose `.random()` always returns 0.0, so both the
+    mechanical-failure and passenger-health coin flips always succeed."""
+
+    def random(self):
+        return 0.0
+
+
+class _NeverFireRng:
+    """Stub rng whose `.random()` always returns 1.0, so any probabilistic
+    "should this fire?" check always evaluates false."""
+
+    def random(self):
+        return 1.0
+
+
+@pytest.mark.django_db
+def test_departure_never_receives_mechanical_or_passenger_health_events():
+    helper = BaseFeatureTest()
+    simulation = helper.create_simulations(
+        1, max_wait_minutes=60, duration_minutes=120, random_seed=3
+    )
+    runway = helper.create_runways(1)[0]
+    simulation_runway = helper.create_simulation_runway(
+        simulation=simulation,
+        runway=runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+
+    aircraft = helper.create_aircraft(
+        simulation=simulation,
+        movement_type=Aircraft.MovementType.DEPARTURE,
+        initial_fuel_minutes=60,
+        scheduled_time=timezone.now(),
+    )
+
+    env = simpy.Environment()
+    wrapper = SimulationRunwayWrapper(env, simulation_runway)
+
+    # Blocker holds the only runway for the whole horizon so the departure
+    # rides out its full max-wait window, giving the (stubbed, always-firing)
+    # probabilistic emergency check many opportunities to fire if it ran.
+    def blocker():
+        req = wrapper.resource.request(priority=0)
+        yield req
+        yield env.timeout(120)
+
+    env.process(blocker())
+
+    runner = SimulationRunner()
+    operation_minutes = runner._operation_minutes(simulation.aircraft_speed_knots)
+
+    def to_datetime(now):
+        return timezone.now()
+
+    runner._spawn_aircraft_process(
+        env,
+        _AlwaysFireRng(),
+        simulation,
+        aircraft,
+        [wrapper],
+        0,
+        to_datetime,
+        operation_minutes,
+    )
+
+    env.run(until=120)
+
+    aircraft.refresh_from_db()
+    event_types = set(
+        AircraftEvent.objects.filter(aircraft=aircraft).values_list(
+            "event_type", flat=True
+        )
+    )
+    assert "MechanicalFailure" not in event_types
+    assert "PassengerHealth" not in event_types
+    assert aircraft.outcome == Aircraft.Outcome.CANCELLED
+
+
+@pytest.mark.django_db
+def test_arrival_can_receive_both_mechanical_and_passenger_health_events():
+    helper = BaseFeatureTest()
+    simulation = helper.create_simulations(
+        1, max_wait_minutes=60, duration_minutes=120, random_seed=4
+    )
+    runway = helper.create_runways(1)[0]
+    simulation_runway = helper.create_simulation_runway(
+        simulation=simulation,
+        runway=runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+
+    aircraft = helper.create_aircraft(
+        simulation=simulation,
+        movement_type=Aircraft.MovementType.ARRIVAL,
+        initial_fuel_minutes=60,
+        scheduled_time=timezone.now(),
+    )
+
+    env = simpy.Environment()
+    wrapper = SimulationRunwayWrapper(env, simulation_runway)
+
+    def blocker():
+        req = wrapper.resource.request(priority=0)
+        yield req
+        yield env.timeout(60)
+
+    env.process(blocker())
+
+    runner = SimulationRunner()
+    operation_minutes = runner._operation_minutes(simulation.aircraft_speed_knots)
+
+    def to_datetime(now):
+        return timezone.now()
+
+    runner._spawn_aircraft_process(
+        env,
+        _ForceEmergencyRng(),
+        simulation,
+        aircraft,
+        [wrapper],
+        0,
+        to_datetime,
+        operation_minutes,
+    )
+
+    env.run(until=60)
+
+    aircraft.refresh_from_db()
+    event_types = set(
+        AircraftEvent.objects.filter(aircraft=aircraft).values_list(
+            "event_type", flat=True
+        )
+    )
+    assert "MechanicalFailure" in event_types
+    assert "PassengerHealth" in event_types
+
+
+@pytest.mark.django_db
+def test_arrival_receives_no_mechanical_or_passenger_health_when_roll_fails():
+    helper = BaseFeatureTest()
+    simulation = helper.create_simulations(
+        1, max_wait_minutes=60, duration_minutes=120, random_seed=5
+    )
+    runway = helper.create_runways(1)[0]
+    simulation_runway = helper.create_simulation_runway(
+        simulation=simulation,
+        runway=runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+
+    aircraft = helper.create_aircraft(
+        simulation=simulation,
+        movement_type=Aircraft.MovementType.ARRIVAL,
+        initial_fuel_minutes=60,
+        scheduled_time=timezone.now(),
+    )
+
+    env = simpy.Environment()
+    wrapper = SimulationRunwayWrapper(env, simulation_runway)
+
+    def blocker():
+        req = wrapper.resource.request(priority=0)
+        yield req
+        yield env.timeout(60)
+
+    env.process(blocker())
+
+    runner = SimulationRunner()
+    operation_minutes = runner._operation_minutes(simulation.aircraft_speed_knots)
+
+    def to_datetime(now):
+        return timezone.now()
+
+    runner._spawn_aircraft_process(
+        env,
+        _NeverFireRng(),
+        simulation,
+        aircraft,
+        [wrapper],
+        0,
+        to_datetime,
+        operation_minutes,
+    )
+
+    env.run(until=60)
+
+    aircraft.refresh_from_db()
+    event_types = set(
+        AircraftEvent.objects.filter(aircraft=aircraft).values_list(
+            "event_type", flat=True
+        )
+    )
+    assert "MechanicalFailure" not in event_types
+    assert "PassengerHealth" not in event_types

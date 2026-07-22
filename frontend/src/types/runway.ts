@@ -1,6 +1,10 @@
 export type OperatingMode = 'ArrivalsOnly' | 'DeparturesOnly' | 'Mixed';
 
-export type OperationalStatus = 'Open' | 'Closed';
+export type OperationalStatus =
+  | 'Available'
+  | 'RunwayInspection'
+  | 'SnowClearance'
+  | 'EquipmentFailure';
 
 /** Master runway record, from GET /api/runways/. */
 export interface Runway {

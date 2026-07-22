@@ -20,7 +20,9 @@ def test_closure_process_flips_db_status_and_records_ordered_events():
     simulation_runway = helper.create_simulation_runway(
         simulation=simulation, runway=runway
     )
-    assert simulation_runway.operational_status == SimulationRunway.OperationalStatus.OPEN
+    assert (
+        simulation_runway.operational_status == SimulationRunway.OperationalStatus.AVAILABLE
+    )
 
     env = simpy.Environment()
     wrapper = SimulationRunwayWrapper(env, simulation_runway)
@@ -82,7 +84,7 @@ def test_closure_process_toggles_wrapper_closed_flag():
     # confirm the flag mirrors the DB row's final operational_status.
     simulation_runway.refresh_from_db()
     expected_closed = (
-        simulation_runway.operational_status == SimulationRunway.OperationalStatus.CLOSED
+        simulation_runway.operational_status != SimulationRunway.OperationalStatus.AVAILABLE
     )
     assert wrapper.closed == expected_closed
 
@@ -137,7 +139,7 @@ def test_runway_closed_at_start_never_gets_aircraft_and_records_closure_event():
         simulation=simulation,
         runway=closed_runway,
         operating_mode=SimulationRunway.OperatingMode.MIXED,
-        operational_status=SimulationRunway.OperationalStatus.CLOSED,
+        operational_status=SimulationRunway.OperationalStatus.EQUIPMENT_FAILURE,
     )
 
     SimulationRunner().run(simulation.id)
@@ -161,7 +163,7 @@ def test_runway_closed_at_start_never_gets_aircraft_and_records_closure_event():
     )
     assert len(events) == 1
     assert events[0].event_type == SimulationRunwayEvent.EventType.CLOSED
-    assert events[0].reason == "Closed at simulation start"
+    assert events[0].reason == "Equipment Failure at simulation start"
     assert events[0].occurred_at == simulation.started_at
 
 
@@ -191,3 +193,49 @@ def test_include_closures_true_can_create_closure_events():
     assert SimulationRunwayEvent.objects.filter(
         simulation_runway__simulation=simulation
     ).count() > 0
+
+
+@pytest.mark.django_db
+def test_closure_process_only_picks_named_closed_reasons_and_reopen_references_them():
+    from api.simulation.closures import CLOSURE_REASON_LABELS
+
+    helper = BaseFeatureTest()
+    simulation = helper.create_simulations(1)
+    runway = helper.create_runways(1)[0]
+    simulation_runway = helper.create_simulation_runway(
+        simulation=simulation, runway=runway
+    )
+
+    env = simpy.Environment()
+    wrapper = SimulationRunwayWrapper(env, simulation_runway)
+    rng = np.random.default_rng(7)
+    base_time = timezone.now()
+
+    def to_datetime(now):
+        return base_time + timedelta(minutes=float(now))
+
+    env.process(closure_process(env, rng, simulation_runway, wrapper, to_datetime))
+    env.run(until=500)
+
+    events = list(
+        SimulationRunwayEvent.objects.filter(
+            simulation_runway=simulation_runway
+        ).order_by("occurred_at")
+    )
+    assert len(events) >= 2
+
+    closed_events = [e for e in events if e.event_type == SimulationRunwayEvent.EventType.CLOSED]
+    reopened_events = [
+        e for e in events if e.event_type == SimulationRunwayEvent.EventType.REOPENED
+    ]
+    assert closed_events
+    assert {e.reason for e in closed_events} <= set(CLOSURE_REASON_LABELS.values())
+    for closed, reopened in zip(closed_events, reopened_events):
+        assert reopened.reason == f"{closed.reason} resolved"
+
+    # Never left mid-run pointing at the sentinel "not closed" status.
+    simulation_runway.refresh_from_db()
+    assert simulation_runway.operational_status in (
+        SimulationRunway.OperationalStatus.AVAILABLE,
+        *CLOSURE_REASON_LABELS.keys(),
+    )

@@ -3,6 +3,7 @@ import { Column } from 'primereact/column';
 import { Tag } from 'primereact/tag';
 import { Link } from 'react-router-dom';
 import type { RunwayStat, SimulationDetail } from '../types/metrics';
+import { OPERATIONAL_STATUS_STYLE } from '../functions/replayTheme';
 
 export default function MetricsRunways({ detail }: { detail: SimulationDetail }) {
   return (
@@ -17,8 +18,8 @@ export default function MetricsRunways({ detail }: { detail: SimulationDetail })
             header="Status"
             body={(row: RunwayStat) => (
               <Tag
-                value={row.operationalStatus}
-                severity={row.operationalStatus === 'Open' ? 'success' : 'danger'}
+                value={OPERATIONAL_STATUS_STYLE[row.operationalStatus].label}
+                severity={row.operationalStatus === 'Available' ? 'success' : 'warning'}
               />
             )}
           />

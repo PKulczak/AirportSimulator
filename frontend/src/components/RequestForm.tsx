@@ -16,12 +16,19 @@ import {
   type SimulationFormValues,
 } from '../schemas/simulationForm';
 import type { CreateSimulationRequest, Simulation } from '../types/simulation';
-import type { OperatingMode } from '../types/runway';
+import type { OperatingMode, OperationalStatus } from '../types/runway';
 
 const OPERATING_MODE_OPTIONS: { label: string; value: OperatingMode }[] = [
   { label: 'Arrivals only', value: 'ArrivalsOnly' },
   { label: 'Departures only', value: 'DeparturesOnly' },
   { label: 'Mixed', value: 'Mixed' },
+];
+
+const OPERATIONAL_STATUS_OPTIONS: { label: string; value: OperationalStatus }[] = [
+  { label: 'Available', value: 'Available' },
+  { label: 'Runway Inspection', value: 'RunwayInspection' },
+  { label: 'Snow Clearance', value: 'SnowClearance' },
+  { label: 'Equipment Failure', value: 'EquipmentFailure' },
 ];
 
 interface RequestFormProps {
@@ -48,7 +55,7 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
 
   const selectedRunwayIds = watch('runwayIds');
   const runwayModes = watch('runwayModes');
-  const runwayStartClosed = watch('runwayStartClosed');
+  const runwayInitialStatus = watch('runwayInitialStatus');
 
   const toggleRunway = (runwayId: number, checked: boolean) => {
     if (checked) {
@@ -77,10 +84,10 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
     );
   };
 
-  const setRunwayStartClosed = (runwayId: number, closed: boolean) => {
+  const setRunwayInitialStatus = (runwayId: number, initialStatus: OperationalStatus) => {
     setValue(
-      'runwayStartClosed',
-      { ...runwayStartClosed, [String(runwayId)]: closed },
+      'runwayInitialStatus',
+      { ...runwayInitialStatus, [String(runwayId)]: initialStatus },
       { shouldValidate: true },
     );
   };
@@ -268,20 +275,16 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
                   placeholder="Mode"
                   className="w-44"
                 />
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    inputId={`runway-${runway.id}-start-closed`}
-                    checked={runwayStartClosed[String(runway.id)] ?? false}
-                    onChange={(e) => setRunwayStartClosed(runway.id, e.checked ?? false)}
-                    disabled={!checked}
-                  />
-                  <label
-                    htmlFor={`runway-${runway.id}-start-closed`}
-                    className="text-sm text-slate-700"
-                  >
-                    Start closed
-                  </label>
-                </div>
+                <Dropdown
+                  value={runwayInitialStatus[String(runway.id)] ?? 'Available'}
+                  options={OPERATIONAL_STATUS_OPTIONS}
+                  onChange={(e) =>
+                    setRunwayInitialStatus(runway.id, e.value as OperationalStatus)
+                  }
+                  disabled={!checked}
+                  placeholder="Initial status"
+                  className="w-48"
+                />
               </div>
             );
           })}

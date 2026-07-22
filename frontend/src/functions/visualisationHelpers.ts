@@ -1,8 +1,23 @@
 import type {
+  AircraftEventType,
   SimulationEvent,
   VisualisationResponse,
   VisualisationResponseWire,
 } from '../types/visualisation';
+
+/** Mirrors the backend's `PriorityTracker`/`constants.EVENT_PRIORITY_BOOSTS`
+ * (simpy.PriorityResource treats *lower* numbers as higher priority) so the
+ * holding-queue display can reconstruct each aircraft's current priority
+ * score from its emergency-event history instead of just showing arrival
+ * order. Every emergency, even a bare LowFuel (boost 10), always outranks a
+ * normal aircraft (score 100) — the boosts are all well under 100. */
+const BASE_PRIORITY = 100;
+const EVENT_PRIORITY_BOOSTS: Partial<Record<AircraftEventType, number>> = {
+  LowFuel: 10,
+  FuelCritical: 40,
+  MechanicalFailure: 25,
+  PassengerHealth: 15,
+};
 
 /**
  * Converts the wire response (absolute ISO-8601 timestamps, relative to
@@ -192,7 +207,10 @@ export function eventsUpTo(events: SimulationEvent[], t: number): SimulationEven
 
 export interface RunwayState {
   occupiedByAircraftId: number | null;
-  closed: boolean;
+  /** Reason text from the triggering `closureStart` event, or null when the
+   * runway isn't currently closed. Carries the *specific* reason (e.g.
+   * "Snow clearance") rather than a bare boolean so the UI can show why. */
+  closureReason: string | null;
 }
 
 /**
@@ -207,7 +225,7 @@ export function deriveRunwayState(
   runwayId: number,
 ): RunwayState {
   let occupiedByAircraftId: number | null = null;
-  let closed = false;
+  let closureReason: string | null = null;
 
   for (const evt of eventsUpTo(events, t)) {
     if (evt.type === 'runwayOccupy' && evt.runwayId === runwayId) {
@@ -215,34 +233,48 @@ export function deriveRunwayState(
     } else if (evt.type === 'runwayVacate' && evt.runwayId === runwayId) {
       occupiedByAircraftId = null;
     } else if (evt.type === 'closureStart' && evt.runwayId === runwayId) {
-      closed = true;
+      closureReason = evt.reason ?? 'Closed';
     } else if (evt.type === 'closureEnd' && evt.runwayId === runwayId) {
-      closed = false;
+      closureReason = null;
     }
   }
 
-  return { occupiedByAircraftId, closed };
+  return { occupiedByAircraftId, closureReason };
 }
 
 export interface QueuedAircraft {
   aircraftId: number;
   queueEntryTime: number;
   waitingMinutes: number;
+  /** Current priority score (lower = higher priority), accumulated from every
+   * emergency event recorded for this aircraft since it joined the queue —
+   * mirrors the backend's `PriorityTracker.boost()`, which is cumulative
+   * across repeated/escalating emergencies, not just the most recent one. */
+  priorityScore: number;
 }
 
 /**
  * Pure fold: aircraft that have entered a queue by time `t` but have neither
- * been assigned a runway nor reached a terminal outcome yet, sorted
- * longest-waiting-first.
+ * been assigned a runway nor reached a terminal outcome yet, sorted by
+ * current priority first (any emergency always outranks a normal aircraft,
+ * matching the engine's actual selection order — see the brief's "Emergency,
+ * then FIFO" rule), then longest-waiting-first among equal priority.
  */
 export function deriveQueue(events: SimulationEvent[], t: number): QueuedAircraft[] {
   const queueEntryTimeByAircraft = new Map<number, number>();
+  const priorityScoreByAircraft = new Map<number, number>();
 
   for (const evt of eventsUpTo(events, t)) {
     if (evt.type === 'queueEnter') {
       queueEntryTimeByAircraft.set(evt.aircraftId, evt.time);
+      priorityScoreByAircraft.set(evt.aircraftId, BASE_PRIORITY);
     } else if (evt.type === 'runwayOccupy' || evt.type === 'outcome') {
       queueEntryTimeByAircraft.delete(evt.aircraftId);
+      priorityScoreByAircraft.delete(evt.aircraftId);
+    } else if (evt.type === 'emergency' && priorityScoreByAircraft.has(evt.aircraftId)) {
+      const boost = EVENT_PRIORITY_BOOSTS[evt.eventType] ?? 0;
+      const current = priorityScoreByAircraft.get(evt.aircraftId) ?? BASE_PRIORITY;
+      priorityScoreByAircraft.set(evt.aircraftId, Math.max(0, current - boost));
     }
   }
 
@@ -251,6 +283,7 @@ export function deriveQueue(events: SimulationEvent[], t: number): QueuedAircraf
       aircraftId,
       queueEntryTime,
       waitingMinutes: t - queueEntryTime,
+      priorityScore: priorityScoreByAircraft.get(aircraftId) ?? BASE_PRIORITY,
     }))
-    .sort((a, b) => a.queueEntryTime - b.queueEntryTime);
+    .sort((a, b) => a.priorityScore - b.priorityScore || a.queueEntryTime - b.queueEntryTime);
 }

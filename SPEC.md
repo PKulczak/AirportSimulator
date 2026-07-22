@@ -70,15 +70,32 @@ delay metric is measured against.
 Every aircraft starts with a fuel load, uniformly distributed between **20 and 60
 minutes**' worth, consumed at a constant rate regardless of speed, altitude, or
 weight. An arrival must land — or be diverted — before its remaining fuel would drop
-below **10 minutes**. Low-fuel and fuel-critical warnings escalate its holding-pattern
-priority as the deadline approaches.
+below **10 minutes**. Low-fuel and fuel-critical warnings fire at fixed remaining-fuel
+checkpoints, not a fraction of some derived budget — a simple, verifiable escalation as
+remaining fuel runs down: **LowFuel** at 20 minutes remaining, **FuelCritical** at 15
+minutes remaining, then the forced divert at 10 minutes remaining. Each warning escalates
+the aircraft's holding-pattern priority as the deadline approaches.
 
 Mechanical failure and passenger-health emergencies can occur probabilistically to any
 queued aircraft, **arrivals only** (departures don't experience in-flight emergencies
 while still on the ground) — each escalates the aircraft's priority so it's pulled
-toward the front of the holding pattern.
+toward the front of the holding pattern. Each is an independent 5% chance per arriving
+aircraft (so an aircraft could in rare cases get both), rolled once and declared
+immediately on joining the holding pattern — not at some later random point in its wait,
+which could land after the aircraft is already assigned a runway and never actually
+manifest, pulling the realized rate below the configured 5%.
 
-Emergency status is one of: `None`, `Fuel`, `Mechanical Failure`, `Passenger Health`.
+Priority is cumulative: an aircraft that has picked up more than one emergency (e.g.
+LowFuel now also has a mechanical failure) is boosted by all of them, not just the
+latest. Every emergency, however minor, always outranks a normal aircraft with no
+emergency at all — there is no scenario where a plane with zero emergencies displaces
+one with any emergency toward the back of the holding pattern.
+
+Emergency status is one of: `None`, `Fuel`, `Mechanical Failure`, `Passenger Health`. It
+only ever applies to arrivals in the holding pattern — a departure waiting in the
+take-off queue must always show `None`; it never has an emergency status and is never
+priority-reordered ahead of other departures, consistent with the take-off queue's
+pure-FIFO rule above.
 
 ### Speed
 
@@ -102,7 +119,8 @@ time.
 
 **Aircraft**: callsign, operator, origin/destination, scheduled vs. actual
 arrival/departure time, holding-pattern altitude (derived from queue position, 1000ft
-per slot), fuel remaining, emergency status.
+per slot), fuel remaining, emergency status (arrivals only — always `None` for a
+departure, per the take-off queue's emergency-status rule above).
 
 **Holding pattern**: the set of arrivals currently queued to land.
 
@@ -178,11 +196,15 @@ those are two different numbers and both matter.
 - ✅ **Done**: max concurrent queue depth metric (peak simultaneous occupancy, split
   by movement type) on the results/detail page.
 - ✅ **Done**: runway operational status as a creation-time user control (a runway can
-  be started `Closed`; it's excluded from the run and a synthetic closure event records
-  why).
-- 🔲 **Outstanding**: 4-value operational status enum (currently binary Open/Closed)
-  and named closure reasons (currently generic "Random closure" text).
-- 🔲 **Outstanding**: restrict priority-escalation/emergency reordering to arrivals only
-  (currently also affects the take-off queue).
+  be started in any non-`Available` status; it's excluded from the run and a synthetic
+  closure event records why).
+- ✅ **Done**: 4-value operational status enum (`Available`/`Runway Inspection`/
+  `Snow Clearance`/`Equipment Failure`) with named closure reasons on every closure event
+  (random closures and "closed at start"), replacing the earlier binary Open/Closed +
+  generic "Random closure" text.
+- ✅ **Done**: priority-escalation/emergency reordering is arrivals-only — mechanical
+  failure and passenger-health checks are no longer rolled for departures, so the
+  take-off queue is genuinely pure FIFO and a departure's emergency status is always
+  `None` (fuel-based emergencies were already arrivals-only).
 - 🔲 **Outstanding**: two-digit runway numbering (currently paired-end identifiers like
   "09L/27R") and seeding enough runways to reach the 1–10 range.

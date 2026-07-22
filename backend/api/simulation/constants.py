@@ -17,24 +17,15 @@ EVENT_PRIORITY_BOOSTS = {
     "PassengerHealth": 15,
 }
 
-# --- Emergency events ---
-# Every this-many (simulated) minutes while an aircraft is queued, roll the dice
-# on firing an emergency event for it.
-EMERGENCY_EVENT_CHECK_INTERVAL_MINUTES = 3
-EMERGENCY_EVENT_PROBABILITY_PER_CHECK = 0.08
-
-MECHANICAL_FAILURE_PROBABILITY_WEIGHT = 0.3
-PASSENGER_HEALTH_PROBABILITY_WEIGHT = 0.3
-# Remaining weight goes to fuel-related events, which are only rolled for
-# Arrival aircraft (departures don't run out of fuel waiting at the gate).
-
-# Fixed-minute-before-deadline offsets don't scale down to the fuel range
-# below (a fixed 30-minute warning would already be "in the past" for an
-# aircraft with only a 10-minute total wait-tolerance budget). Warnings are
-# fractions of the wait-tolerance budget instead, so they always land in
-# order no matter how tight an individual aircraft's fuel is.
-LOW_FUEL_THRESHOLD_FRACTION = 0.5  # fires at 50% of budget elapsed
-FUEL_CRITICAL_THRESHOLD_FRACTION = 0.8  # fires at 80% of budget elapsed (20% remaining)
+# --- Emergency events (arrivals only — see the take-off queue's pure-FIFO
+# rule; departures never roll for or receive any of these) ---
+# Mechanical failure and passenger health are each rolled once per arriving
+# aircraft, independently of one another and of the fuel-based warnings below,
+# and declared immediately on joining the holding pattern — not at a random
+# later point, which could land after the aircraft is already assigned a
+# runway and silently never fire, pulling the realized rate below this figure.
+MECHANICAL_FAILURE_PROBABILITY = 0.05
+PASSENGER_HEALTH_PROBABILITY = 0.05
 
 # --- Aircraft generation ---
 # Fuel is uniformly distributed 20-60 minutes' worth; an arrival must land
@@ -42,6 +33,15 @@ FUEL_CRITICAL_THRESHOLD_FRACTION = 0.8  # fires at 80% of budget elapsed (20% re
 INITIAL_FUEL_MINUTES_MIN = 20
 INITIAL_FUEL_MINUTES_MAX = 60
 FORCED_DIVERT_FUEL_REMAINING_MINUTES = 10
+
+# Fuel warnings fire at fixed absolute remaining-fuel checkpoints (not a
+# fraction of some derived budget) so they're a simple, verifiable rule: this
+# many minutes of fuel left, full stop. LowFuel fires 10 minutes before the
+# forced-divert reserve above; FuelCritical splits the gap between the two,
+# giving a clear three-stage escalation as remaining fuel runs down:
+# LowFuel (20 min left) -> FuelCritical (15 min left) -> forced divert (10 min left).
+LOW_FUEL_REMAINING_MINUTES = 20
+FUEL_CRITICAL_REMAINING_MINUTES = 15
 
 # Aircraft are scheduled at evenly-spaced target times (60 / rate_per_hour
 # minutes apart); the actual time they enter the model is jittered around

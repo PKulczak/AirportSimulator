@@ -57,7 +57,7 @@ class BaseFeatureTest(TestCase):
         defaults = {
             "simulation": simulation,
             "runway": runway,
-            "operational_status": SimulationRunway.OperationalStatus.OPEN,
+            "operational_status": SimulationRunway.OperationalStatus.AVAILABLE,
             "operating_mode": SimulationRunway.OperatingMode.MIXED,
         }
         defaults.update(overrides)

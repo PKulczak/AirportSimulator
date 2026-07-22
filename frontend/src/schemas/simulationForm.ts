@@ -1,8 +1,15 @@
 import { z } from 'zod';
 import type { CreateSimulationRequest } from '../types/simulation';
-import type { OperatingMode } from '../types/runway';
+import type { OperatingMode, OperationalStatus } from '../types/runway';
 
 export const operatingModeSchema = z.enum(['ArrivalsOnly', 'DeparturesOnly', 'Mixed']);
+
+export const operationalStatusSchema = z.enum([
+  'Available',
+  'RunwayInspection',
+  'SnowClearance',
+  'EquipmentFailure',
+]);
 
 export const simulationFormSchema = z
   .object({
@@ -19,7 +26,7 @@ export const simulationFormSchema = z
     includeClosures: z.boolean(),
     runwayIds: z.array(z.number()).min(1, 'Select at least one runway'),
     runwayModes: z.record(z.string(), operatingModeSchema),
-    runwayStartClosed: z.record(z.string(), z.boolean()),
+    runwayInitialStatus: z.record(z.string(), operationalStatusSchema),
   })
   .refine((data) => data.maxWaitMinutes < data.durationMinutes, {
     message: 'Max wait time must be less than the simulation duration',
@@ -69,7 +76,7 @@ export const defaultSimulationFormValues: SimulationFormValues = {
   includeClosures: false,
   runwayIds: [],
   runwayModes: {},
-  runwayStartClosed: {},
+  runwayInitialStatus: {},
 };
 
 export function toCreateSimulationRequest(
@@ -86,7 +93,8 @@ export function toCreateSimulationRequest(
     runways: values.runwayIds.map((runwayId) => ({
       runwayId,
       operatingMode: values.runwayModes[String(runwayId)] as OperatingMode,
-      operationalStatus: values.runwayStartClosed[String(runwayId)] ? 'Closed' : 'Open',
+      operationalStatus:
+        (values.runwayInitialStatus[String(runwayId)] as OperationalStatus) ?? 'Available',
     })),
   };
 }

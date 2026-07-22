@@ -14,7 +14,8 @@ export interface RunwayOccupancy {
 interface RunwayProps {
   identifier: string;
   operatingMode: OperatingMode;
-  closed: boolean;
+  /** Reason text (e.g. "Snow clearance") when closed, null when available. */
+  closureReason: string | null;
   occupancy: RunwayOccupancy | null;
   /** Active emergency (if any) for the aircraft currently occupying this runway. */
   activeEmergency: AircraftEventType | null;
@@ -49,11 +50,12 @@ const MAX_TRAVEL_FRACTION = 0.9;
 export default function Runway({
   identifier,
   operatingMode,
-  closed,
+  closureReason,
   occupancy,
   activeEmergency,
   getSmoothTime,
 }: RunwayProps) {
+  const closed = closureReason !== null;
   const planeRef = useRef<HTMLDivElement | null>(null);
   const latestRef = useRef({ occupancy, getSmoothTime });
   latestRef.current = { occupancy, getSmoothTime };
@@ -93,8 +95,8 @@ export default function Runway({
 
       <div className="relative h-8 min-w-0 flex-1 overflow-hidden">
         {closed ? (
-          <span className="absolute inset-0 flex items-center text-sm font-semibold text-red-600">
-            Closed
+          <span className="absolute inset-0 flex items-center truncate text-sm font-semibold text-red-600">
+            {closureReason}
           </span>
         ) : occupancy ? (
           <>

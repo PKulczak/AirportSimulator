@@ -3,8 +3,10 @@ from django.db import models
 
 class SimulationRunway(models.Model):
     class OperationalStatus(models.TextChoices):
-        OPEN = "Open", "Open"
-        CLOSED = "Closed", "Closed"
+        AVAILABLE = "Available", "Available"
+        RUNWAY_INSPECTION = "RunwayInspection", "Runway Inspection"
+        SNOW_CLEARANCE = "SnowClearance", "Snow Clearance"
+        EQUIPMENT_FAILURE = "EquipmentFailure", "Equipment Failure"
 
     class OperatingMode(models.TextChoices):
         ARRIVALS_ONLY = "ArrivalsOnly", "Arrivals Only"
@@ -20,7 +22,7 @@ class SimulationRunway(models.Model):
     operational_status = models.CharField(
         max_length=16,
         choices=OperationalStatus.choices,
-        default=OperationalStatus.OPEN,
+        default=OperationalStatus.AVAILABLE,
     )
     operating_mode = models.CharField(max_length=16, choices=OperatingMode.choices)
 
