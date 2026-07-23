@@ -86,17 +86,18 @@ export default function SimulationHistory() {
             Airport Simulation
           </h1>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
+            <div />
             <InputText
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search"
-              className="w-full max-w-sm bg-brand-bg"
+              className="w-full max-w-sm justify-self-center bg-brand-bg"
             />
             <Button
               label="Create"
               onClick={() => setDialogVisible(true)}
-              className="font-bold"
+              className="justify-self-end !border-brand-accent-active !bg-brand-accent-active font-bold !text-white"
             />
           </div>
 
@@ -116,15 +117,21 @@ export default function SimulationHistory() {
             className="cursor-pointer"
             emptyMessage="No simulations yet"
           >
-            <Column field="name" header="Name" headerClassName="text-center" bodyClassName="text-center font-semibold" />
+            <Column
+              field="name"
+              header="Name"
+              alignHeader="center"
+              align="center"
+              bodyClassName="font-semibold"
+            />
             <Column
               header="Date Requested"
-              headerClassName="text-center"
-              bodyClassName="text-center"
+              alignHeader="center"
+              align="center"
               body={(row: Simulation) => {
                 const { date, time } = formatDateParts(row.createdAt);
                 return (
-                  <span className="flex flex-col leading-tight">
+                  <span className="inline-flex flex-col leading-tight">
                     <span>{date}</span>
                     <span>{time}</span>
                   </span>
@@ -133,22 +140,22 @@ export default function SimulationHistory() {
             />
             <Column
               header="Duration (Hrs)"
-              headerClassName="text-center"
-              bodyClassName="text-center"
+              alignHeader="center"
+              align="center"
               body={(row: Simulation) => (row.durationMinutes / 60).toFixed(1).replace(/\.0$/, '')}
             />
             <Column
               field="runwayCount"
               header="Runways"
-              headerClassName="text-center"
-              bodyClassName="text-center"
+              alignHeader="center"
+              align="center"
             />
             <Column
               header="Aircraft Flow"
-              headerClassName="text-center"
-              bodyClassName="text-center"
+              alignHeader="center"
+              align="center"
               body={(row: Simulation) => (
-                <span className="flex items-center justify-center gap-3">
+                <span className="inline-flex items-center gap-3">
                   <span className="flex items-center gap-1.5">
                     {row.arrivalRatePerHour}
                     <FontAwesomeIcon icon={faPlaneArrival} className="text-slate-500" />
@@ -162,8 +169,8 @@ export default function SimulationHistory() {
             />
             <Column
               header="Status"
-              headerClassName="text-center"
-              bodyClassName="text-center"
+              alignHeader="center"
+              align="center"
               body={(row: Simulation) => (
                 <Tag value={row.status} severity={STATUS_SEVERITY[row.status]} />
               )}
@@ -176,20 +183,21 @@ export default function SimulationHistory() {
                   onClick={() => refetch()}
                   aria-label="Refresh"
                   tooltip="Refresh"
-                  className="!text-brand-accent"
+                  className="!border-transparent !bg-transparent !text-brand-accent-active !text-lg"
                 />
               )}
-              headerClassName="text-center"
-              bodyClassName="text-center"
+              alignHeader="center"
+              align="center"
               body={(row: Simulation) => (
                 <Button
                   icon={<FontAwesomeIcon icon={faChevronRight} />}
-                  rounded
+                  text
                   aria-label="View details"
                   onClick={(e) => {
                     e.stopPropagation();
                     navigate(`/simulation/${row.id}/detail`);
                   }}
+                  className="!border-transparent !bg-transparent !text-brand-accent-active !text-lg"
                 />
               )}
             />
