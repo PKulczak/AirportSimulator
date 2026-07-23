@@ -81,7 +81,7 @@ export default function SimulationHistory() {
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="queue-scroll relative flex max-h-full w-full max-w-5xl flex-col gap-4 overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl sm:p-6">
+        <div className="queue-scroll relative flex max-h-full w-full max-w-5xl flex-col gap-4 overflow-y-auto rounded-lg border-2 border-black bg-white p-4 shadow-2xl sm:p-6">
           <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
             Airport Simulation
           </h1>

@@ -203,7 +203,7 @@ export default function SimulationVisualisation() {
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="relative flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="relative flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-lg border-2 border-black bg-white shadow-2xl">
           {/* Top bar: page title, then back/name/clock/controls all on one row */}
           <div className="flex flex-col gap-1 border-b border-slate-100 px-4 pb-1 pt-4">
             <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
