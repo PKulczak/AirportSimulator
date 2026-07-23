@@ -101,12 +101,12 @@ export default function MetricBasePage() {
             Airport Simulation
           </h1>
 
-          <div className="flex items-center gap-3 rounded-full bg-brand-accent px-3 py-2">
+          <div className="flex items-center gap-3 rounded-md bg-brand-accent px-1.5 py-1">
             <Button
               icon="pi pi-chevron-left"
               aria-label="Back to home"
               onClick={() => navigate('/')}
-              className="!rounded-full !bg-brand-accent-active !border-brand-accent-active"
+              className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
             <span className="flex-1 text-center text-lg font-bold text-black">
               {data.name} - {formatDateTime(data.completedAt)}
@@ -115,7 +115,7 @@ export default function MetricBasePage() {
               icon="pi pi-eye"
               aria-label="View full replay"
               onClick={() => navigate(`/simulation/${data.id}/visualisation`)}
-              className="!rounded-full !bg-brand-accent-active !border-brand-accent-active"
+              className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
           </div>
 
