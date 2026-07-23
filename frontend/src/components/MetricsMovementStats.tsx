@@ -70,7 +70,7 @@ export default function MetricsMovementStats({
           <span className="text-xs font-semibold text-black">Departure</span>
         </div>
       </div>
-      <div className="grid grid-cols-3 place-items-center gap-3 bg-brand-bg p-3 lg:grid-cols-6">
+      <div className="grid grid-cols-3 items-start justify-items-center gap-3 bg-brand-bg p-3 lg:grid-cols-6">
         {stats.map((stat) => (
           <MetricsStatCircle key={stat.label} value={stat.value} label={stat.label} />
         ))}
