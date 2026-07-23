@@ -73,7 +73,7 @@ export default function SimulationHistory() {
   return (
     <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
       <div
-        className="relative flex-1 min-h-0 overflow-hidden p-4 sm:p-10 flex items-center justify-center"
+        className="relative flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-4 sm:p-10 flex items-center justify-center"
         style={{
           backgroundImage: `url(${backgroundImage})`,
           backgroundSize: 'cover',
@@ -81,7 +81,10 @@ export default function SimulationHistory() {
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="queue-scroll relative flex max-h-full w-full max-w-5xl flex-col gap-4 overflow-y-auto rounded-lg border-2 border-black bg-white p-4 shadow-2xl sm:p-6">
+        <div
+          className="queue-scroll relative flex min-w-[800px] flex-col gap-4 overflow-y-auto rounded-lg border-2 border-black bg-white p-4 shadow-2xl sm:p-6"
+          style={{ width: '100%', maxWidth: '1600px', maxHeight: '100%', aspectRatio: '1.5' }}
+        >
           <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
             Airport Simulation
           </h1>

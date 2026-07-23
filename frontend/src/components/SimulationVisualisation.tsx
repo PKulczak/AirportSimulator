@@ -193,9 +193,14 @@ export default function SimulationVisualisation() {
        * it. `min-h-0` + `overflow-hidden` keep this pinned to its
        * flex-allocated share of the viewport — it never grows with content,
        * so the page itself never scrolls; only elements inside the box
-       * (queue tables, runway list, event log) do. */}
+       * (queue tables, runway list, event log) do. The box itself uses a
+       * fixed `aspectRatio` plus `maxWidth`/`maxHeight` (below) so it scales
+       * up in both dimensions together on a larger viewport instead of just
+       * stretching taller — the same "shrink/grow to fit, keep proportions"
+       * behavior as `object-fit: contain`, applied to a plain div via CSS
+       * rather than JS. */}
       <div
-        className="relative flex-1 min-h-0 overflow-hidden p-4 sm:p-10 flex items-center justify-center"
+        className="relative flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-4 sm:p-10 flex items-center justify-center"
         style={{
           backgroundImage: `url(${backgroundImage})`,
           backgroundSize: 'cover',
@@ -203,7 +208,10 @@ export default function SimulationVisualisation() {
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="relative flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-lg border-2 border-black bg-white shadow-2xl">
+        <div
+          className="relative flex min-w-[800px] flex-col overflow-hidden rounded-lg border-2 border-black bg-white shadow-2xl"
+          style={{ width: '100%', maxWidth: '1600px', maxHeight: '100%', aspectRatio: '1.5' }}
+        >
           {/* Top bar: page title, then back/name/clock/controls all on one row */}
           <div className="flex flex-col gap-1 border-b border-slate-100 px-4 pb-1 pt-4">
             <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
