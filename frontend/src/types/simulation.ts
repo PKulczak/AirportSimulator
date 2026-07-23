@@ -15,6 +15,7 @@ export interface Simulation {
   includeClosures: boolean;
   createdAt: string;
   completedAt: string | null;
+  runwayCount: number;
 }
 
 /** POST /api/simulations/ request body. */

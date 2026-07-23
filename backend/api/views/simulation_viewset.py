@@ -19,6 +19,11 @@ class SimulationViewset(
     filter_backends = [SearchFilter]
     search_fields = ["name"]
 
+    def get_queryset(self):
+        if self.action == "list":
+            return Simulation.objects.with_runway_count()
+        return super().get_queryset()
+
     def get_serializer_class(self):
         if self.action == "create":
             return SimulationCreationDto

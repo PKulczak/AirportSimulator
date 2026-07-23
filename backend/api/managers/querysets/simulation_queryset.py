@@ -44,6 +44,15 @@ class SimulationQuerySet(QuerySet):
             "simulation_runways__closure_events",
         )
 
+    def with_runway_count(self):
+        # `annotate()` with an aggregate silently drops the model's default
+        # `Meta.ordering` (Django re-derives ordering around the GROUP BY it
+        # adds), so re-assert it explicitly — otherwise the list endpoint
+        # stops returning newest-first.
+        return self.annotate(
+            runway_count=Count("simulation_runways", distinct=True)
+        ).order_by("-created_at")
+
     def for_visualisation(self):
         return self.prefetch_related(
             "aircraft",
