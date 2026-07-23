@@ -1,26 +1,35 @@
 import type { SimulationDetail } from '../types/metrics';
 
-export default function MetricsSimVariables({ detail }: { detail: SimulationDetail }) {
+interface MetricsSimVariablesProps {
+  detail: SimulationDetail;
+  /** Lets the parent stretch this panel (e.g. `flex-1`) to fill leftover
+   * column height next to the fixed-height runway info panel above it. */
+  className?: string;
+}
+
+export default function MetricsSimVariables({ detail, className }: MetricsSimVariablesProps) {
   const items: { label: string; value: string }[] = [
-    { label: 'Arrival rate', value: `${detail.arrivalRatePerHour}/hr` },
-    { label: 'Departure rate', value: `${detail.departureRatePerHour}/hr` },
-    { label: 'Duration', value: `${detail.durationMinutes} min` },
-    { label: 'Max wait', value: `${detail.maxWaitMinutes} min` },
-    { label: 'Aircraft speed', value: `${detail.aircraftSpeedKnots} kts` },
-    { label: 'Closures', value: detail.includeClosures ? 'Enabled' : 'Disabled' },
+    { label: 'Departure Plane Flow', value: `${detail.departureRatePerHour} /hour` },
+    { label: 'Arrival Plane Flow', value: `${detail.arrivalRatePerHour} /hour` },
+    { label: 'Duration', value: `${detail.durationMinutes} mins` },
+    { label: 'Maximum Wait Time', value: `${detail.maxWaitMinutes} mins` },
+    { label: 'Aircraft Speed', value: `${detail.aircraftSpeedKnots} kts` },
+    { label: 'Closures Included?', value: detail.includeClosures ? 'Yes' : 'No' },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="rounded-lg border border-slate-200 bg-brand-bg p-3 text-left"
-        >
-          <p className="text-xs uppercase tracking-wide text-slate-400">{item.label}</p>
-          <p className="text-lg font-semibold text-slate-800">{item.value}</p>
-        </div>
-      ))}
+    <div className={`flex flex-col overflow-hidden rounded-lg border border-slate-200 ${className ?? ''}`}>
+      <h2 className="bg-brand-accent px-3 py-1 text-xs font-bold uppercase tracking-wide text-black">
+        Sim Variables
+      </h2>
+      <div className="grid flex-1 grid-cols-1 content-around gap-y-3 bg-brand-bg p-3">
+        {items.map((item) => (
+          <div key={item.label} className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-bold text-slate-800">{item.label}:</span>
+            <span className="text-sm text-slate-700">{item.value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
