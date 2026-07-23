@@ -66,6 +66,7 @@ export default function MetricsMovementStats({
           <InputSwitch
             checked={!isArrival}
             onChange={(e) => onMovementTypeChange(e.value ? 'Departure' : 'Arrival')}
+            className="movement-switch"
           />
           <span className="text-xs font-semibold text-black">Departure</span>
         </div>
