@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { useGet } from '../functions/axios';
@@ -11,8 +11,18 @@ import MetricsRunways from './MetricsRunways';
 
 export default function MetricBasePage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { data, loading, error, refetch } = useGet<SimulationDetailResponse>(
     id ? `/api/simulations/${id}/detail/` : null,
+  );
+
+  const backButton = (
+    <Button
+      icon="pi pi-chevron-left"
+      aria-label="Back to home"
+      onClick={() => navigate('/')}
+      className="self-start"
+    />
   );
 
   if (loading && !data) {
@@ -22,6 +32,7 @@ export default function MetricBasePage() {
   if (error) {
     return (
       <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-3">
+        {backButton}
         <Message severity="error" text={`Failed to load simulation: ${error.message}`} />
         <Button label="Retry" onClick={() => refetch()} className="self-start" />
       </div>
@@ -35,6 +46,7 @@ export default function MetricBasePage() {
   if (!isDetailComplete(data)) {
     return (
       <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
+        {backButton}
         <h1 className="text-2xl font-semibold text-slate-800">{data.name}</h1>
         <Message
           severity={data.status === 'Error' ? 'error' : 'info'}
@@ -60,6 +72,7 @@ export default function MetricBasePage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {backButton}
       <MetricsHeader detail={data} />
       <MetricsSimVariables detail={data} />
       <MetricsGrid detail={data} />
