@@ -15,10 +15,10 @@ export default function SimulationFormDialog({
 }: SimulationFormDialogProps) {
   return (
     <Dialog
-      header="New simulation"
+      header="Create Simulation"
       visible={visible}
       onHide={onHide}
-      style={{ width: '40rem', maxWidth: '95vw' }}
+      style={{ width: '54rem', maxWidth: '95vw' }}
       modal
     >
       <RequestForm

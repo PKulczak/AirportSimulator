@@ -127,6 +127,19 @@ body {
   background: var(--color-brand-accent-hover);
   border-color: var(--color-brand-accent-hover);
 }
+/* The unselected option in a SelectButton would otherwise inherit the plain
+ * `.p-button` accent fill above, making every option look "selected" — reset
+ * it to a neutral outline so only the highlighted option reads as active. */
+.p-selectbutton .p-button:not(.p-highlight) {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #000000;
+}
+.p-selectbutton .p-button:not(.p-highlight):hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #000000;
+}
 
 .p-checkbox.p-highlight .p-checkbox-box {
   border-color: var(--color-brand-accent);
@@ -152,10 +165,10 @@ body {
   color: #000000;
 }
 
-/* Panel-style overlays (creation dialog, event log sidebar) use the same
- * panel background as everything else. */
-.p-dialog .p-dialog-header,
-.p-dialog .p-dialog-content,
+/* Event log sidebar uses the same panel background as everything else. The
+ * create-simulation dialog is deliberately left at PrimeReact's own white
+ * default instead (matching the "Create Simulation" design), rather than
+ * this amber tint. */
 .p-sidebar {
   background: var(--color-brand-bg);
   color: #000000;
