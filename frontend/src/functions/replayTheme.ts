@@ -2,11 +2,16 @@ import type { OperatingMode, OperationalStatus } from '../types/runway';
 import type { AircraftEventType } from '../types/visualisation';
 
 /** Shared colour/label mapping so the legend, runway cards, and queue rows
- * all agree on what each operating mode / emergency type looks like. */
-export const OPERATING_MODE_STYLE: Record<OperatingMode, { label: string; bg: string }> = {
-  ArrivalsOnly: { label: 'Landing', bg: 'bg-mode-landing' },
-  DeparturesOnly: { label: 'Takeoff', bg: 'bg-mode-takeoff' },
-  Mixed: { label: 'Mixed', bg: 'bg-mode-mixed' },
+ * all agree on what each operating mode / emergency type looks like. `fill` is
+ * a brighter, more vivid version of `bg`, used for the runway progress bar that
+ * tracks behind the plane as it moves along the runway. */
+export const OPERATING_MODE_STYLE: Record<
+  OperatingMode,
+  { label: string; bg: string; fill: string }
+> = {
+  ArrivalsOnly: { label: 'Landing', bg: 'bg-mode-landing', fill: 'bg-mode-landing-fill' },
+  DeparturesOnly: { label: 'Takeoff', bg: 'bg-mode-takeoff', fill: 'bg-mode-takeoff-fill' },
+  Mixed: { label: 'Mixed', bg: 'bg-mode-mixed', fill: 'bg-mode-mixed-fill' },
 };
 
 export const MODE_LEGEND = (Object.keys(OPERATING_MODE_STYLE) as OperatingMode[]).map((mode) => ({

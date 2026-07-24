@@ -20,6 +20,13 @@
   --color-mode-landing: #cdeaf5;
   --color-mode-takeoff: #f7ecc4;
   --color-mode-mixed: #f6d2e6;
+  /* A brighter, more vivid version of each mode swatch, for the runway progress
+   * fill that tracks behind the plane — same hue as the runway, just turned up
+   * so it stands out against the pale card. Still light enough that the (bold,
+   * dark) callsign and runway number stay legible over it. */
+  --color-mode-landing-fill: #5fc7ed;
+  --color-mode-takeoff-fill: #f0cd4c;
+  --color-mode-mixed-fill: #ef6cb4;
   --color-alert-lowfuel: #f6d743;
   --color-alert-mechanical: #e5533b;
   --color-alert-passenger: #fdc261;
