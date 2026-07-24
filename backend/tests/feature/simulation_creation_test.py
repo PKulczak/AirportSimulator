@@ -190,3 +190,115 @@ class SimulationCreationTest(BaseFeatureTest):
         )
         response = self.client.post(reverse("simulation-list"), payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_rejects_rate_over_100(self):
+        payload = self._payload(arrivalRatePerHour=101)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("arrivalRatePerHour", response.json())
+
+    def test_create_simulation_accepts_rate_at_exactly_100(self):
+        payload = self._payload(arrivalRatePerHour=100)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_rejects_zero_arrival_and_departure_rate(self):
+        payload = self._payload(arrivalRatePerHour=0, departureRatePerHour=0)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_simulation_allows_zero_arrival_rate_with_departures(self):
+        payload = self._payload(
+            arrivalRatePerHour=0,
+            departureRatePerHour=10,
+            runways=[
+                {"runwayId": self.runways[0].id, "operatingMode": "Mixed"},
+                {"runwayId": self.runways[1].id, "operatingMode": "Mixed"},
+            ],
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_rejects_single_runway_with_closures_enabled(self):
+        payload = self._payload(
+            includeClosures=True,
+            runways=[{"runwayId": self.runways[0].id, "operatingMode": "Mixed"}],
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_simulation_allows_single_runway_without_closures(self):
+        payload = self._payload(
+            includeClosures=False,
+            runways=[{"runwayId": self.runways[0].id, "operatingMode": "Mixed"}],
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_allows_two_runways_with_closures_enabled(self):
+        payload = self._payload(includeClosures=True)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_rejects_arrival_runway_not_available(self):
+        payload = self._payload(
+            runways=[
+                {
+                    "runwayId": self.runways[0].id,
+                    "operatingMode": "Mixed",
+                    "operationalStatus": "EquipmentFailure",
+                },
+                {"runwayId": self.runways[1].id, "operatingMode": "DeparturesOnly"},
+            ]
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_simulation_rejects_departure_runway_not_available(self):
+        payload = self._payload(
+            runways=[
+                {"runwayId": self.runways[0].id, "operatingMode": "ArrivalsOnly"},
+                {
+                    "runwayId": self.runways[1].id,
+                    "operatingMode": "Mixed",
+                    "operationalStatus": "SnowClearance",
+                },
+            ]
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_simulation_allows_when_one_of_several_runways_is_available(self):
+        payload = self._payload(
+            runways=[
+                {
+                    "runwayId": self.runways[0].id,
+                    "operatingMode": "Mixed",
+                    "operationalStatus": "EquipmentFailure",
+                },
+                {"runwayId": self.runways[1].id, "operatingMode": "Mixed"},
+            ]
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_rejects_max_wait_over_90_percent_of_duration(self):
+        payload = self._payload(durationMinutes=100, maxWaitMinutes=91)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_simulation_allows_max_wait_at_exactly_90_percent(self):
+        payload = self._payload(durationMinutes=100, maxWaitMinutes=90)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_rejects_name_with_invalid_characters(self):
+        payload = self._payload(name="Bad \U0001F600 emoji run")
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("name", response.json())
+
+    def test_create_simulation_allows_name_with_basic_punctuation(self):
+        payload = self._payload(name="LHR Run #3 (v2), take-two")
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
