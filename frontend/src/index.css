@@ -102,6 +102,14 @@ body {
   border-color: var(--color-brand-accent);
 }
 
+/* PrimeReact's ProgressSpinner cycles through four unrelated colours
+ * (red/blue/green/orange) by default — override to a single spin in the
+ * site's accent colour, dropping the colour-cycle animation. */
+.p-progress-spinner-circle {
+  stroke: var(--color-brand-accent-active);
+  animation: p-progress-spinner-dash 1.5s ease-in-out infinite;
+}
+
 .p-progressbar .p-progressbar-value {
   background: var(--color-brand-accent);
 }

@@ -11,6 +11,7 @@ import MetricsSimVariables from './MetricsSimVariables';
 import MetricsGeneralStats from './MetricsGeneralStats';
 import MetricsMovementStats from './MetricsMovementStats';
 import MetricsTimeline from './MetricsTimeline';
+import LoadingScreen from './LoadingScreen';
 import backgroundImage from '../assets/Background.png';
 
 /** e.g. "26/06/2026 12:17" — a fixed format so it doesn't depend on the
@@ -42,7 +43,7 @@ export default function MetricBasePage() {
   );
 
   if (loading && !data) {
-    return <p className="text-slate-500">Loading simulation details...</p>;
+    return <LoadingScreen />;
   }
 
   if (error) {

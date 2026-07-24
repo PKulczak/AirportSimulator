@@ -22,6 +22,7 @@ import type {
 import Runway, { type RunwayOccupancy } from './Runway';
 import QueueTable from './QueueTable';
 import SimulationEventLog from './SimulationEventLog';
+import LoadingScreen from './LoadingScreen';
 import backgroundImage from '../assets/Background.png';
 
 // At 1x, one tick fires per second and advances the sim clock by
@@ -134,7 +135,7 @@ export default function SimulationVisualisation() {
   );
 
   if (loading && !raw) {
-    return <p className="text-slate-500">Loading visualisation...</p>;
+    return <LoadingScreen />;
   }
 
   if (error) {
