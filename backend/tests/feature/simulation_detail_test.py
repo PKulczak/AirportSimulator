@@ -2,7 +2,7 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 
-from api.models import Aircraft, Simulation, SimulationRunway
+from api.models import Aircraft, Simulation, SimulationRunway, SimulationRunwayEvent
 from tests.base_test import BaseFeatureTest
 
 
@@ -217,3 +217,64 @@ class SimulationDetailTest(BaseFeatureTest):
     def test_detail_404_for_unknown_simulation(self):
         response = self.client.get(reverse("simulation-detail", kwargs={"pk": 999999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_timeline_events_includes_diversions_cancellations_and_closures_only(self):
+        started_at = timezone.now()
+        simulation = self.create_simulations(
+            1, status=Simulation.Status.COMPLETE, started_at=started_at
+        )
+        runway = self.create_runways(1)[0]
+        sr = self.create_simulation_runway(simulation=simulation, runway=runway)
+
+        self.create_aircraft(
+            simulation=simulation,
+            callsign="DIV001",
+            outcome=Aircraft.Outcome.DIVERTED,
+            was_success=False,
+            completion_time=started_at + timezone.timedelta(minutes=12),
+        )
+        self.create_aircraft(
+            simulation=simulation,
+            callsign="CAN001",
+            movement_type=Aircraft.MovementType.DEPARTURE,
+            outcome=Aircraft.Outcome.CANCELLED,
+            was_success=False,
+            completion_time=started_at + timezone.timedelta(minutes=30),
+        )
+        # A Success aircraft's completion should never appear on the timeline.
+        self.create_aircraft(
+            simulation=simulation,
+            callsign="SUC001",
+            outcome=Aircraft.Outcome.SUCCESS,
+            was_success=True,
+            completion_time=started_at + timezone.timedelta(minutes=5),
+        )
+        self.create_runway_event(
+            simulation_runway=sr,
+            event_type=SimulationRunwayEvent.EventType.CLOSED,
+            occurred_at=started_at + timezone.timedelta(minutes=8),
+            reason="Snow clearance",
+        )
+        # Reopenings are deliberately excluded — see get_timeline_events.
+        self.create_runway_event(
+            simulation_runway=sr,
+            event_type=SimulationRunwayEvent.EventType.REOPENED,
+            occurred_at=started_at + timezone.timedelta(minutes=18),
+        )
+
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        events = response.json()["timelineEvents"]
+        self.assertEqual(len(events), 3)
+        # Sorted ascending by time.
+        self.assertEqual(
+            [e["type"] for e in events], ["Closed", "Diverted", "Cancelled"]
+        )
+        self.assertAlmostEqual(events[0]["timeMinutes"], 8, delta=0.01)
+        self.assertEqual(events[0]["runwayIdentifier"], runway.identifier)
+        self.assertEqual(events[0]["detail"], "Snow clearance")
+        self.assertAlmostEqual(events[1]["timeMinutes"], 12, delta=0.01)
+        self.assertAlmostEqual(events[2]["timeMinutes"], 30, delta=0.01)

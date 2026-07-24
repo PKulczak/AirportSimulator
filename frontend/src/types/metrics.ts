@@ -39,6 +39,19 @@ export interface RunwayStat {
   closureCount: number;
 }
 
+export type TimelineEventType = 'Diverted' | 'Cancelled' | 'Closed';
+
+/** A single point-in-time incident for the summary timeline: an aircraft
+ * diversion/cancellation, or a runway closure starting. There's no
+ * reopened/un-diverted counterpart — every marker represents one instant,
+ * not a start/end pair. */
+export interface TimelineEvent {
+  timeMinutes: number;
+  type: TimelineEventType;
+  runwayIdentifier: string | null;
+  detail: string | null;
+}
+
 /** GET /api/simulations/{id}/detail/ when the simulation has finished running. */
 export interface SimulationDetail {
   id: number;
@@ -60,6 +73,7 @@ export interface SimulationDetail {
   queueDepthStats: QueueDepthStats;
   runwayStats: RunwayStat[];
   closureEventCount: number;
+  timelineEvents: TimelineEvent[];
 }
 
 /** GET /api/simulations/{id}/detail/ while the simulation hasn't finished (or errored). */

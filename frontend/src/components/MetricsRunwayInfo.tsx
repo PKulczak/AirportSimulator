@@ -16,13 +16,20 @@ const MODE_ICON: Record<OperatingMode, typeof faRightLeft> = {
 const successRateFor = (row: RunwayStat) =>
   row.totalAssigned > 0 ? Math.round((row.successCount / row.totalAssigned) * 100) : null;
 
-export default function MetricsRunwayInfo({ detail }: { detail: SimulationDetail }) {
+interface MetricsRunwayInfoProps {
+  detail: SimulationDetail;
+  /** Lets the parent stretch this panel (e.g. `flex-1`) to fill leftover
+   * column height next to the fixed-height sim variables panel below it. */
+  className?: string;
+}
+
+export default function MetricsRunwayInfo({ detail, className }: MetricsRunwayInfoProps) {
   return (
-    <div className="rounded-lg overflow-hidden border border-slate-200">
+    <div className={`flex flex-col overflow-hidden rounded-lg border border-slate-200 ${className ?? ''}`}>
       <h2 className="bg-brand-accent px-3 py-1 text-xs font-bold uppercase tracking-wide text-black">
         Runway Info
       </h2>
-      <div className="queue-scroll flex max-h-36 flex-col divide-y divide-slate-200 overflow-y-auto bg-brand-bg">
+      <div className="queue-scroll flex min-h-0 flex-1 flex-col divide-y divide-slate-200 overflow-y-auto bg-brand-bg">
         {detail.runwayStats.length === 0 && (
           <p className="p-2 text-xs text-slate-500">No runways in this simulation.</p>
         )}

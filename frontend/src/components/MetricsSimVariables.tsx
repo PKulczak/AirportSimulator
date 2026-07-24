@@ -22,7 +22,7 @@ export default function MetricsSimVariables({ detail, className }: MetricsSimVar
       <h2 className="bg-brand-accent px-3 py-1 text-xs font-bold uppercase tracking-wide text-black">
         Sim Variables
       </h2>
-      <div className="grid flex-1 grid-cols-1 content-around gap-y-3 bg-brand-bg p-3">
+      <div className="grid flex-1 grid-cols-1 content-around gap-y-1.5 bg-brand-bg px-3 py-2 [@media(min-height:950px)]:gap-y-3 [@media(min-height:950px)]:py-3">
         {items.map((item) => (
           <div key={item.label} className="flex items-baseline justify-between gap-2">
             <span className="text-sm font-bold text-slate-800">{item.label}:</span>

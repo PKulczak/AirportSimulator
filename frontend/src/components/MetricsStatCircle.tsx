@@ -9,7 +9,7 @@ interface MetricsStatCircleProps {
 export default function MetricsStatCircle({ value, label }: MetricsStatCircleProps) {
   return (
     <div className="flex flex-col items-center gap-1.5 text-center">
-      <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border-4 border-brand-accent bg-white text-xl font-bold text-slate-800">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-4 border-brand-accent bg-white text-lg font-bold text-slate-800 [@media(min-height:950px)]:h-24 [@media(min-height:950px)]:w-24 [@media(min-height:950px)]:text-xl">
         {value}
       </div>
       <p className="text-xs font-medium text-slate-600">{label}</p>

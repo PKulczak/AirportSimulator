@@ -9,6 +9,9 @@ interface MetricsMovementStatsProps {
   detail: SimulationDetail;
   movementType: MovementType;
   onMovementTypeChange: (movementType: MovementType) => void;
+  /** Lets the parent stretch this panel (e.g. `flex-1`) to fill its share of
+   * the column height; the stat row then centres within the grown panel. */
+  className?: string;
 }
 
 /** Switchable arrival/departure stats panel — only one direction of traffic
@@ -19,6 +22,7 @@ export default function MetricsMovementStats({
   detail,
   movementType,
   onMovementTypeChange,
+  className,
 }: MetricsMovementStatsProps) {
   const isArrival = movementType === 'Arrival';
   const removedCount = isArrival ? detail.outcomeCounts.diverted : detail.outcomeCounts.cancelled;
@@ -56,7 +60,7 @@ export default function MetricsMovementStats({
   ];
 
   return (
-    <div className="rounded-lg overflow-hidden border border-slate-200">
+    <div className={`flex flex-col overflow-hidden rounded-lg border border-slate-200 ${className ?? ''}`}>
       <div className="flex items-center justify-between gap-3 bg-brand-accent px-3 py-1.5">
         <span className="text-sm font-bold uppercase tracking-wide text-black">
           {isArrival ? 'Arrival Metrics' : 'Departure Metrics'}
@@ -71,7 +75,7 @@ export default function MetricsMovementStats({
           <span className="text-xs font-semibold text-black">Departure</span>
         </div>
       </div>
-      <div className="grid grid-cols-3 items-start justify-items-center gap-3 bg-brand-bg p-3 lg:grid-cols-6">
+      <div className="grid flex-1 grid-cols-3 items-start content-around justify-items-center gap-3 bg-brand-bg px-3 py-2 lg:grid-cols-6 [@media(min-height:950px)]:py-3">
         {stats.map((stat) => (
           <MetricsStatCircle key={stat.label} value={stat.value} label={stat.label} />
         ))}

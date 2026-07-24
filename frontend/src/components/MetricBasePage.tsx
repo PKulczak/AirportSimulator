@@ -10,6 +10,7 @@ import MetricsRunwayInfo from './MetricsRunwayInfo';
 import MetricsSimVariables from './MetricsSimVariables';
 import MetricsGeneralStats from './MetricsGeneralStats';
 import MetricsMovementStats from './MetricsMovementStats';
+import MetricsTimeline from './MetricsTimeline';
 import backgroundImage from '../assets/Background.png';
 
 /** e.g. "26/06/2026 12:17" — a fixed format so it doesn't depend on the
@@ -97,7 +98,7 @@ export default function MetricBasePage() {
         }}
       >
         <div
-          className="queue-scroll relative flex min-w-[800px] flex-col gap-3 overflow-y-auto rounded-lg border-2 border-black bg-white p-4 shadow-2xl sm:p-6"
+          className="queue-scroll relative flex min-w-[800px] flex-col gap-2 overflow-y-auto rounded-lg border-2 border-black bg-white p-4 shadow-2xl sm:p-6"
           style={{ width: '100%', maxWidth: '1600px', maxHeight: '100%', aspectRatio: '1.5' }}
         >
           <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
@@ -122,21 +123,24 @@ export default function MetricBasePage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-3">
-            <div className="flex flex-col gap-3 lg:col-span-1">
-              <MetricsRunwayInfo detail={data} />
-              <MetricsSimVariables detail={data} className="flex-1" />
+          <div className="grid flex-1 grid-cols-1 items-stretch gap-2 lg:grid-cols-3 lg:grid-rows-1">
+            <div className="flex flex-col gap-2 lg:col-span-1">
+              <MetricsRunwayInfo detail={data} className="flex-1" />
+              <MetricsSimVariables detail={data} />
             </div>
 
-            <div className="flex flex-col gap-3 lg:col-span-2">
-              <MetricsGeneralStats detail={data} />
+            <div className="flex flex-col gap-2 lg:col-span-2">
+              <MetricsGeneralStats detail={data} className="flex-1" />
               <MetricsMovementStats
                 detail={data}
                 movementType={movementType}
                 onMovementTypeChange={setMovementType}
+                className="flex-1"
               />
             </div>
           </div>
+
+          <MetricsTimeline detail={data} />
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
     queue_depth_stats = serializers.SerializerMethodField()
     runway_stats = serializers.SerializerMethodField()
     closure_event_count = serializers.SerializerMethodField()
+    timeline_events = serializers.SerializerMethodField()
 
     class Meta:
         model = Simulation
@@ -36,6 +37,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
             "queue_depth_stats",
             "runway_stats",
             "closure_event_count",
+            "timeline_events",
         ]
 
     def get_success_rate(self, obj):
@@ -122,6 +124,53 @@ class SimulationDetailDto(serializers.ModelSerializer):
 
     def get_closure_event_count(self, obj):
         return getattr(obj, "closure_event_count", 0) or 0
+
+    def get_timeline_events(self, obj):
+        # Point-in-time incidents for the summary timeline: when an aircraft
+        # was diverted/cancelled, and when a runway went down for closure.
+        # Reopenings aren't included — there's no "un-diverted" counterpart
+        # for aircraft either, so all three marker types represent a single
+        # incident instant, not a start/end pair.
+        started_at = obj.started_at
+        if started_at is None:
+            return []
+
+        events = []
+        for aircraft in obj.aircraft.all():
+            if (
+                aircraft.outcome in ("Diverted", "Cancelled")
+                and aircraft.completion_time is not None
+            ):
+                events.append(
+                    {
+                        "time_minutes": (
+                            aircraft.completion_time - started_at
+                        ).total_seconds()
+                        / 60.0,
+                        "type": aircraft.outcome,
+                        "runway_identifier": None,
+                        "detail": aircraft.callsign,
+                    }
+                )
+
+        for simulation_runway in obj.simulation_runways.all():
+            for closure_event in simulation_runway.closure_events.all():
+                if closure_event.event_type != "Closed":
+                    continue
+                events.append(
+                    {
+                        "time_minutes": (
+                            closure_event.occurred_at - started_at
+                        ).total_seconds()
+                        / 60.0,
+                        "type": "Closed",
+                        "runway_identifier": simulation_runway.runway.identifier,
+                        "detail": closure_event.reason,
+                    }
+                )
+
+        events.sort(key=lambda event: event["time_minutes"])
+        return events
 
     def get_runway_stats(self, obj):
         # Uses the prefetched relations from SimulationQuerySet.with_detail(),
