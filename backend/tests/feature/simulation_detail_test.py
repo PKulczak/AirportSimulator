@@ -218,7 +218,7 @@ class SimulationDetailTest(BaseFeatureTest):
         response = self.client.get(reverse("simulation-detail", kwargs={"pk": 999999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_timeline_events_includes_diversions_cancellations_and_closures_only(self):
+    def test_timeline_events_includes_diversions_cancellations_closures_and_reopenings(self):
         started_at = timezone.now()
         simulation = self.create_simulations(
             1, status=Simulation.Status.COMPLETE, started_at=started_at
@@ -255,11 +255,11 @@ class SimulationDetailTest(BaseFeatureTest):
             occurred_at=started_at + timezone.timedelta(minutes=8),
             reason="Snow clearance",
         )
-        # Reopenings are deliberately excluded — see get_timeline_events.
         self.create_runway_event(
             simulation_runway=sr,
             event_type=SimulationRunwayEvent.EventType.REOPENED,
             occurred_at=started_at + timezone.timedelta(minutes=18),
+            reason="Snow clearance resolved",
         )
 
         response = self.client.get(
@@ -268,13 +268,17 @@ class SimulationDetailTest(BaseFeatureTest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         events = response.json()["timelineEvents"]
-        self.assertEqual(len(events), 3)
+        self.assertEqual(len(events), 4)
         # Sorted ascending by time.
         self.assertEqual(
-            [e["type"] for e in events], ["Closed", "Diverted", "Cancelled"]
+            [e["type"] for e in events],
+            ["Closed", "Diverted", "Reopened", "Cancelled"],
         )
         self.assertAlmostEqual(events[0]["timeMinutes"], 8, delta=0.01)
         self.assertEqual(events[0]["runwayIdentifier"], runway.identifier)
         self.assertEqual(events[0]["detail"], "Snow clearance")
         self.assertAlmostEqual(events[1]["timeMinutes"], 12, delta=0.01)
-        self.assertAlmostEqual(events[2]["timeMinutes"], 30, delta=0.01)
+        self.assertAlmostEqual(events[2]["timeMinutes"], 18, delta=0.01)
+        self.assertEqual(events[2]["runwayIdentifier"], runway.identifier)
+        self.assertEqual(events[2]["detail"], "Snow clearance resolved")
+        self.assertAlmostEqual(events[3]["timeMinutes"], 30, delta=0.01)

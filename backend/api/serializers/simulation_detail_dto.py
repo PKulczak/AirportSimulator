@@ -127,10 +127,10 @@ class SimulationDetailDto(serializers.ModelSerializer):
 
     def get_timeline_events(self, obj):
         # Point-in-time incidents for the summary timeline: when an aircraft
-        # was diverted/cancelled, and when a runway went down for closure.
-        # Reopenings aren't included — there's no "un-diverted" counterpart
-        # for aircraft either, so all three marker types represent a single
-        # incident instant, not a start/end pair.
+        # was diverted/cancelled, and when a runway went down for closure or
+        # came back up from one. Each marker is a single instant, not a
+        # start/end pair — there's no "un-diverted" counterpart for aircraft
+        # either.
         started_at = obj.started_at
         if started_at is None:
             return []
@@ -155,15 +155,13 @@ class SimulationDetailDto(serializers.ModelSerializer):
 
         for simulation_runway in obj.simulation_runways.all():
             for closure_event in simulation_runway.closure_events.all():
-                if closure_event.event_type != "Closed":
-                    continue
                 events.append(
                     {
                         "time_minutes": (
                             closure_event.occurred_at - started_at
                         ).total_seconds()
                         / 60.0,
-                        "type": "Closed",
+                        "type": closure_event.event_type,
                         "runway_identifier": simulation_runway.runway.identifier,
                         "detail": closure_event.reason,
                     }

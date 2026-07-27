@@ -39,12 +39,13 @@ export interface RunwayStat {
   closureCount: number;
 }
 
-export type TimelineEventType = 'Diverted' | 'Cancelled' | 'Closed';
+export type TimelineEventType = 'Diverted' | 'Cancelled' | 'Closed' | 'Reopened';
 
 /** A single point-in-time incident for the summary timeline: an aircraft
- * diversion/cancellation, or a runway closure starting. There's no
- * reopened/un-diverted counterpart — every marker represents one instant,
- * not a start/end pair. */
+ * diversion/cancellation, or a runway closure starting/ending. There's no
+ * "un-diverted" counterpart for aircraft — every marker represents one
+ * instant, not a start/end pair (closures and reopenings are two separate
+ * instants, not one interval). */
 export interface TimelineEvent {
   timeMinutes: number;
   type: TimelineEventType;
