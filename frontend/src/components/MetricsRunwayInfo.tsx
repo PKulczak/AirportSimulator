@@ -37,21 +37,23 @@ export default function MetricsRunwayInfo({ detail, className }: MetricsRunwayIn
           const rate = successRateFor(row);
           return (
             <div key={row.runwayId} className="flex items-center gap-2 px-3 py-1">
-              <span className="w-16 shrink-0 text-xs font-semibold text-slate-800">
+              <span className="shrink-0 text-xs font-semibold text-slate-800">
                 Runway {row.identifier}
               </span>
-              <span className="w-9 shrink-0 text-xs text-slate-600">
-                {rate != null ? `${rate}%` : '—'}
-              </span>
-              <span
-                className={`h-2.5 w-2.5 shrink-0 rounded-full ${OPERATIONAL_STATUS_STYLE[row.operationalStatus].dot}`}
-                title={OPERATIONAL_STATUS_STYLE[row.operationalStatus].label}
-              />
-              <FontAwesomeIcon
-                icon={MODE_ICON[row.operatingMode]}
-                className="ml-auto shrink-0 text-xs text-slate-600"
-                title={row.operatingMode}
-              />
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <span className="w-9 shrink-0 text-right text-xs text-slate-600">
+                  {rate != null ? `${rate}%` : '—'}
+                </span>
+                <span
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${OPERATIONAL_STATUS_STYLE[row.operationalStatus].dot}`}
+                  title={OPERATIONAL_STATUS_STYLE[row.operationalStatus].label}
+                />
+                <FontAwesomeIcon
+                  icon={MODE_ICON[row.operatingMode]}
+                  className="shrink-0 text-xs text-slate-600"
+                  title={row.operatingMode}
+                />
+              </div>
             </div>
           );
         })}
