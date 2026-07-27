@@ -92,12 +92,17 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
     const newIds = e.value.map((r) => r.id).slice(0, MAX_RUNWAYS);
     setValue('runwayIds', newIds, { shouldValidate: true });
     const newModes = { ...runwayModes };
+    const newInitialStatus = { ...runwayInitialStatus };
     for (const id of newIds) {
       if (!newModes[String(id)]) {
         newModes[String(id)] = 'Mixed';
       }
+      if (!newInitialStatus[String(id)]) {
+        newInitialStatus[String(id)] = 'Available';
+      }
     }
     setValue('runwayModes', newModes, { shouldValidate: true });
+    setValue('runwayInitialStatus', newInitialStatus, { shouldValidate: true });
   };
 
   const onSubmit = handleSubmit(async (values) => {
@@ -266,13 +271,27 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
         <DataTable
           value={runways}
           dataKey="id"
-          selectionMode="multiple"
+          // "checkbox" (not "multiple") so selection is driven only by the
+          // checkbox column below — "multiple" also enables click-anywhere-
+          // in-the-row selection, which swallowed clicks on the mode/status
+          // Dropdowns (PrimeReact's row-click handler doesn't recognise
+          // Dropdown's DOM as "already interactive"), toggling the row
+          // instead of opening the dropdown.
+          selectionMode="checkbox"
           selection={selectedRunways}
           onSelectionChange={onRunwaySelectionChange}
           isDataSelectable={(e) =>
             selectedRunwayIds.includes((e.data as Runway).id) ||
             selectedRunwayIds.length < MAX_RUNWAYS
           }
+          // PrimeReact memoizes body cells by default, re-rendering only when
+          // a fixed set of keys change (rowData, field, index, ...) — none of
+          // which are affected by `selectedRunwayIds`/`runwayModes` changing.
+          // The Mode/Status columns' bodies close over those, so without this
+          // they'd render once with nothing selected and then never update —
+          // the Dropdowns would look stuck disabled even after checking a
+          // row. The table is small (≤12 rows), so unmemoized cells are fine.
+          cellMemo={false}
           scrollable
           scrollHeight="240px"
           className="rounded border border-slate-200"
@@ -284,27 +303,36 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
           <Column
             header="Operational Mode"
             body={(row: Runway) => (
-              <Dropdown
-                value={runwayModes[String(row.id)] ?? null}
-                options={OPERATING_MODE_OPTIONS}
-                onChange={(e) => setRunwayMode(row.id, e.value as OperatingMode)}
-                disabled={!selectedRunwayIds.includes(row.id)}
-                placeholder="Please..."
-                className="w-full"
-              />
+              // Stops the click from bubbling to the row: PrimeReact's row
+              // click handler runs regardless of whether selection itself
+              // changes, and unconditionally steals focus back to the row —
+              // which otherwise fights with the Dropdown opening from the
+              // same click.
+              <div onClick={(e) => e.stopPropagation()}>
+                <Dropdown
+                  value={runwayModes[String(row.id)] ?? null}
+                  options={OPERATING_MODE_OPTIONS}
+                  onChange={(e) => setRunwayMode(row.id, e.value as OperatingMode)}
+                  disabled={!selectedRunwayIds.includes(row.id)}
+                  placeholder="Please..."
+                  className="w-full"
+                />
+              </div>
             )}
           />
           <Column
             header="Operational Status"
             body={(row: Runway) => (
-              <Dropdown
-                value={runwayInitialStatus[String(row.id)] ?? null}
-                options={OPERATIONAL_STATUS_OPTIONS}
-                onChange={(e) => setRunwayInitialStatus(row.id, e.value as OperationalStatus)}
-                disabled={!selectedRunwayIds.includes(row.id)}
-                placeholder="Please..."
-                className="w-full"
-              />
+              <div onClick={(e) => e.stopPropagation()}>
+                <Dropdown
+                  value={runwayInitialStatus[String(row.id)] ?? null}
+                  options={OPERATIONAL_STATUS_OPTIONS}
+                  onChange={(e) => setRunwayInitialStatus(row.id, e.value as OperationalStatus)}
+                  disabled={!selectedRunwayIds.includes(row.id)}
+                  placeholder="Please..."
+                  className="w-full"
+                />
+              </div>
             )}
           />
         </DataTable>
