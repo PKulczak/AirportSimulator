@@ -110,8 +110,18 @@ export function useGet<TResponse>(
   return { data, loading, error, refetch };
 }
 
-/** Default cadence for the polling hook below. */
+/** Default cadence for the polling hook below (used when push is unavailable). */
 export const POLL_INTERVAL_MS = 4000;
+
+/**
+ * Slower cadence used as a *safety net* while the websocket reports connected.
+ * Push delivers instant updates in the normal case; this guarantees the page
+ * still refreshes within a bounded time if a push message is missed (a
+ * subscribe-after-publish race, a dropped frame, or a half-open socket that
+ * never fired `onclose`). Kept well above `POLL_INTERVAL_MS` so a healthy push
+ * connection isn't doing meaningful extra work.
+ */
+export const SAFETY_POLL_INTERVAL_MS = 15000;
 
 /**
  * Calls `refetch` on a fixed interval while `active` is true, and stops as soon

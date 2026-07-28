@@ -26,6 +26,54 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-28 — Fix: pages could stop auto-refreshing when the websocket was "connected"
+
+**Slice:** n/a (Epic 1 / Slice 1.4 robustness fix)
+**Status:** Done
+
+**Symptom (reported):** sometimes a page stops polling — assumed to be because the
+websocket connected — but then never updates until a manual refresh.
+
+**Root cause:** all three live pages gated polling on `isRunning && !connected`, i.e. push
+*replaced* polling entirely once the socket reported connected. But a terminal status
+message can be missed, and nothing then refreshes:
+- **Subscribe-after-publish race:** the page fetches `Running`, opens the socket, but the
+  `Complete`/`Error` transition is published before the client finishes joining the Channels
+  group. Groups don't replay, so that frame is lost — and with polling suppressed, the page
+  sits stale. Runs finish in ~10s, so this connect window is proportionally large.
+- **Half-open socket:** if TCP drops without a close frame, `onclose` doesn't fire for a
+  long time, so `connected` stays `true` and polling stays off.
+
+**Fix (frontend only)**
+- [frontend/src/functions/socket.ts](frontend/src/functions/socket.ts) — `useSimulationSocket`
+  gained an `onOpen` callback that fires on every (re)connect; callers pass `refetch` so the
+  page **resyncs immediately on connect**, catching anything published during the connect
+  window.
+- [frontend/src/functions/axios.ts](frontend/src/functions/axios.ts) — added
+  `SAFETY_POLL_INTERVAL_MS = 15000`.
+- [MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx),
+  [SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx),
+  [SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx) — poll is no longer
+  disabled by `connected`. Now: `usePollWhile(isRunning, refetch, connected ?
+  SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS)` — always poll while a run is in flight, fast
+  (4s) when push is down, slow (15s) as a safety net when it's up. Each also passes `refetch`
+  as `onOpen`.
+
+**Net behaviour:** push still delivers instant updates in the normal case; the connect-window
+race is closed by refetch-on-open; and any missed/half-open push is caught by the ≤15s safety
+poll — so a page always self-refreshes to the terminal state without a manual refresh.
+
+**Verification**
+- `tsc -b` + `eslint` clean on all changed files. Vite (:3000) serving (HTTP 200) — HMR
+  applies it; no backend restart needed (frontend-only).
+- Not browser-automation-tested (no FE test runner); reasoned through each failure mode above.
+
+**Notes / follow-up**
+- The visualisation page's safety poll refetches the full aircraft array (~thousands of rows)
+  every 15s while `Running` — harmless (ignored until `Complete`, runs are short) but a
+  lightweight status-only endpoint would remove even that; candidate follow-up (also noted
+  under Slice 1.3).
+
 ## 2026-07-28 — Slices 3.1 + 3.2 activated in the dev environment
 
 **Status:** Done — seed + re-run now live in dev.

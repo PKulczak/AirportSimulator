@@ -4,7 +4,12 @@ import { Slider, type SliderChangeEvent } from 'primereact/slider';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { Sidebar } from 'primereact/sidebar';
-import { useGet, usePollWhile } from '../functions/axios';
+import {
+  POLL_INTERVAL_MS,
+  SAFETY_POLL_INTERVAL_MS,
+  useGet,
+  usePollWhile,
+} from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
 import { useRunways } from '../context/RunwayContext';
 import {
@@ -54,12 +59,16 @@ export default function SimulationVisualisation() {
   // it completes; stop at the terminal Complete/Error states. Kept above the
   // early returns below so the hook always runs (rules of hooks).
   const isRunning = !!raw && raw.status !== 'Complete' && raw.status !== 'Error';
-  // Prefer websocket push for this simulation; poll only while the socket is down.
+  // Prefer websocket push for this simulation, refetching on (re)connect to
+  // catch anything missed during the connect window. Keep polling while it
+  // runs — fast when push is down, slow as a safety net when it's up — so a
+  // missed/half-open push never leaves the page stale until a manual refresh.
   const { connected } = useSimulationSocket(
     isRunning && id ? `/ws/simulations/${id}/` : null,
     refetch,
+    refetch,
   );
-  usePollWhile(isRunning && !connected, refetch);
+  usePollWhile(isRunning, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);

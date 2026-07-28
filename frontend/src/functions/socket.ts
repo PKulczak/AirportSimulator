@@ -24,22 +24,32 @@ function socketUrl(path: string): string {
 
 /**
  * Opens a websocket to `path` and invokes `onMessage` for each status message,
- * reconnecting if it drops. Returns `{ connected }` so callers can suppress
- * their polling fallback while push is live. Pass `path = null` to stay
- * disconnected (e.g. once a simulation has reached a terminal state).
+ * reconnecting if it drops. Returns `{ connected }` so callers can throttle
+ * (not disable) their polling fallback while push is live. Pass `path = null`
+ * to stay disconnected (e.g. once a simulation has reached a terminal state).
  *
  * The socket is a notification channel only: `onMessage` should refetch via the
  * REST API rather than trust the socket as a data source.
+ *
+ * `onOpen` fires on every (re)connect: callers pass their `refetch` so the page
+ * immediately resyncs after the socket comes up. This closes the race where a
+ * status transition is published *before* the client finishes joining the
+ * channel group — channel groups don't replay, so that message would otherwise
+ * be lost and, with polling suppressed, the page would sit stale until a manual
+ * refresh.
  */
 export function useSimulationSocket(
   path: string | null,
   onMessage: (message: SimulationStatusMessage) => void,
+  onOpen?: () => void,
 ): { connected: boolean } {
   const [connected, setConnected] = useState(false);
-  // Keep the latest callback without making it an effect dependency, so a new
-  // inline `onMessage` each render doesn't tear down and rebuild the socket.
+  // Keep the latest callbacks without making them effect dependencies, so a new
+  // inline callback each render doesn't tear down and rebuild the socket.
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
 
   useEffect(() => {
     // Reset on every (re)subscribe: assume disconnected until the socket opens,
@@ -66,6 +76,9 @@ export function useSimulationSocket(
       socket.onopen = () => {
         if (!stopped) {
           setConnected(true);
+          // Resync immediately: catch any transition published during the
+          // connect window (before we joined the group), which push won't replay.
+          onOpenRef.current?.();
         }
       };
       socket.onmessage = (event) => {

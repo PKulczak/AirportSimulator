@@ -12,7 +12,12 @@ import {
   faPlaneArrival,
   faPlaneDeparture,
 } from '@fortawesome/free-solid-svg-icons';
-import { useGet, usePollWhile } from '../functions/axios';
+import {
+  POLL_INTERVAL_MS,
+  SAFETY_POLL_INTERVAL_MS,
+  useGet,
+  usePollWhile,
+} from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
 import type { Page } from '../types/common';
 import type { Simulation, SimulationStatus } from '../types/simulation';
@@ -75,13 +80,17 @@ export default function SimulationHistory() {
       ),
     [data],
   );
-  // Prefer websocket push (global feed) for status changes; poll only as a
-  // fallback while the socket is down, and only when a run could still change.
+  // Prefer websocket push (global feed) for status changes, refetching on
+  // (re)connect to catch anything missed during the connect window. Keep
+  // polling while a run could still change — fast when push is down, slow as a
+  // safety net when it's up — so a missed/half-open push never leaves the list
+  // stale until a manual refresh.
   const { connected } = useSimulationSocket(
     hasActiveRuns ? '/ws/simulations/' : null,
     refetch,
+    refetch,
   );
-  usePollWhile(hasActiveRuns && !connected, refetch);
+  usePollWhile(hasActiveRuns, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
 
   const onPage = (event: DataTablePageEvent) => {
     setPage(Math.floor((event.first ?? 0) / PAGE_SIZE) + 1);

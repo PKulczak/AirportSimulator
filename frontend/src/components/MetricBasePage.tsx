@@ -2,7 +2,13 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
-import { useGet, usePollWhile, usePost } from '../functions/axios';
+import {
+  POLL_INTERVAL_MS,
+  SAFETY_POLL_INTERVAL_MS,
+  useGet,
+  usePollWhile,
+  usePost,
+} from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
 import { isDetailComplete } from '../types/metrics';
 import type { SimulationDetailResponse } from '../types/metrics';
@@ -55,12 +61,16 @@ export default function MetricBasePage() {
   // errors (both terminal). `isDetailComplete` narrows to the Complete shape,
   // so anything not-complete and not-Error here is Pending/Running.
   const isRunning = !!data && !isDetailComplete(data) && data.status !== 'Error';
-  // Prefer websocket push for this simulation; poll only while the socket is down.
+  // Prefer websocket push for this simulation, refetching on (re)connect to
+  // catch anything missed during the connect window. Keep polling while it
+  // runs — fast when push is down, slow as a safety net when it's up — so a
+  // missed/half-open push never leaves the page stale until a manual refresh.
   const { connected } = useSimulationSocket(
     isRunning && id ? `/ws/simulations/${id}/` : null,
     refetch,
+    refetch,
   );
-  usePollWhile(isRunning && !connected, refetch);
+  usePollWhile(isRunning, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
 
   const backButton = (
     <Button
