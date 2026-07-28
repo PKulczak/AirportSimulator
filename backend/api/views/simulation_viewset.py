@@ -13,7 +13,10 @@ from api.tasks import run_simulation
 
 
 class SimulationViewset(
-    mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
 ):
     queryset = Simulation.objects.all()
     filter_backends = [SearchFilter]

@@ -5,14 +5,18 @@ import { Column } from 'primereact/column';
 import { Tag } from 'primereact/tag';
 import { Button } from 'primereact/button';
 import { InputText } from 'primereact/inputtext';
+import { Dialog } from 'primereact/dialog';
+import { Message } from 'primereact/message';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowsRotate,
   faChevronRight,
   faPlaneArrival,
   faPlaneDeparture,
+  faTrash,
 } from '@fortawesome/free-solid-svg-icons';
 import {
+  apiClient,
   POLL_INTERVAL_MS,
   SAFETY_POLL_INTERVAL_MS,
   useGet,
@@ -52,6 +56,9 @@ export default function SimulationHistory() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [dialogVisible, setDialogVisible] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Simulation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -94,6 +101,30 @@ export default function SimulationHistory() {
 
   const onPage = (event: DataTablePageEvent) => {
     setPage(Math.floor((event.first ?? 0) / PAGE_SIZE) + 1);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiClient.delete(`/api/simulations/${deleteTarget.id}/`);
+      setDeleteTarget(null);
+      // If that was the last row on a page past the first, step back a page
+      // (which refetches via the url memo); otherwise refetch in place.
+      const remaining = (data?.results?.length ?? 1) - 1;
+      if (remaining <= 0 && page > 1) {
+        setPage((p) => p - 1);
+      } else {
+        refetch();
+      }
+    } catch {
+      setDeleteError('Failed to delete simulation. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -148,6 +179,26 @@ export default function SimulationHistory() {
             className="cursor-pointer"
             emptyMessage="No simulations yet"
           >
+            <Column
+              header=""
+              alignHeader="center"
+              align="center"
+              headerStyle={{ width: '3rem' }}
+              body={(row: Simulation) => (
+                <Button
+                  icon={<FontAwesomeIcon icon={faTrash} />}
+                  text
+                  aria-label={`Delete ${row.name}`}
+                  tooltip="Delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteError(null);
+                    setDeleteTarget(row);
+                  }}
+                  className="!border-transparent !bg-transparent !text-red-600 !text-lg"
+                />
+              )}
+            />
             <Column
               field="name"
               header="Name"
@@ -241,6 +292,42 @@ export default function SimulationHistory() {
         onHide={() => setDialogVisible(false)}
         onCreated={() => refetch()}
       />
+
+      <Dialog
+        header="Delete simulation"
+        visible={deleteTarget !== null}
+        onHide={() => {
+          if (!deleting) {
+            setDeleteTarget(null);
+          }
+        }}
+        draggable={false}
+        dismissableMask={!deleting}
+        style={{ width: '28rem', maxWidth: '90vw' }}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              label="Cancel"
+              text
+              disabled={deleting}
+              onClick={() => setDeleteTarget(null)}
+            />
+            <Button
+              label="Delete"
+              icon={<FontAwesomeIcon icon={faTrash} className="mr-2" />}
+              loading={deleting}
+              onClick={confirmDelete}
+              className="!border-red-600 !bg-red-600 !text-white"
+            />
+          </div>
+        }
+      >
+        <p className="text-slate-700">
+          Delete <span className="font-semibold">{deleteTarget?.name}</span> and all of its
+          results? This cannot be undone.
+        </p>
+        {deleteError && <Message severity="error" text={deleteError} className="mt-3 w-full" />}
+      </Dialog>
     </div>
   );
 }

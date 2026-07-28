@@ -26,6 +26,51 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-28 — Slice 2.1 — Delete a simulation
+
+**Slice:** 2.1 — Delete a simulation (Epic 2, Simulation management)
+**Status:** Done (code + tests + live-verified)
+
+**Backend changes**
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) — added
+  `mixins.DestroyModelMixin`, so `DELETE /api/simulations/{id}/` returns 204. No custom logic
+  needed: the FK graph already cascades — `Aircraft`→`Simulation` CASCADE (→ `AircraftEvent`
+  CASCADE), `SimulationRunway`→`Simulation` CASCADE (→ `SimulationRunwayEvent` CASCADE). The
+  master `Runway` is `PROTECT` from `SimulationRunway`, but the join row is deleted first so
+  the master survives. Deleting a Pending/Running sim is safe: `SimulationRunner.run()`
+  already handles a missing row (logs + returns, no retry), and `save(update_fields=...)` on
+  a deleted row is a 0-row no-op.
+
+**Frontend changes**
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — a red trash button in the actions column opens a confirm `Dialog` ("Delete <name> and all
+  of its results? This cannot be undone."). On confirm it `DELETE`s via the shared `apiClient`
+  and refetches; if it was the last row on a page past the first, it steps back a page instead.
+  Errors keep the dialog open with a `Message`. Row click still navigates to detail; the trash
+  and chevron buttons `stopPropagation`.
+
+**Verification**
+- [simulation_delete_test.py](backend/tests/feature/simulation_delete_test.py) (5 tests):
+  204 + row gone; cascade to aircraft/events/runways/runway-events; master runway survives;
+  only the target is removed; unknown id → 404. **Full suite: 111 passed** (+5).
+- Frontend `tsc -b` + `eslint` clean.
+- Restarted **hypercorn** (web-layer change, no autoreload) — verified live end-to-end:
+  create → 201, `DELETE /api/simulations/{id}/` → 204, subsequent `GET …/detail/` → 404.
+  Frontend is HMR (no restart); dramatiq worker untouched (no engine change).
+
+**Notes**
+- ⚠️ Route-name collision worth knowing: `reverse("simulation-detail")` resolves to the
+  custom metrics action `/{pk}/detail/`, **not** the destroy route `/{pk}/`, because the
+  `@action(url_name="detail")` shares the router's `simulation-detail` name. The paths are
+  distinct so routing/`apiClient` work fine; only `reverse()`-by-name is ambiguous. Tests hit
+  the destroy path directly.
+- DB cleanup using the new endpoint: removed my own diagnostic sims 95/96/97 (Slice 3.2) and
+  105 (this turn). ⚠️ During an initial overzealous cleanup I searched `?search=smoke` and one
+  DELETE landed before I caught it — **sim id 1 (a `*smoke*`-named artifact) was deleted**.
+  The other matches errored out (000/never committed) and survive; the remaining
+  earlier-session `*-smoke-test` sims (7, 8, 11, 14, 16) were intentionally left untouched.
+  Lesson: delete by explicit id, not a substring sweep.
+
 ## 2026-07-28 — Fix: pages could stop auto-refreshing when the websocket was "connected"
 
 **Slice:** n/a (Epic 1 / Slice 1.4 robustness fix)
