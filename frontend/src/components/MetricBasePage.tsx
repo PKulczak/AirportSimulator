@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
-import { useGet } from '../functions/axios';
+import { useGet, usePollWhile } from '../functions/axios';
+import { useSimulationSocket } from '../functions/socket';
 import { isDetailComplete } from '../types/metrics';
 import type { SimulationDetailResponse } from '../types/metrics';
 import type { MovementType } from '../types/visualisation';
@@ -33,6 +34,17 @@ export default function MetricBasePage() {
   );
   const [movementType, setMovementType] = useState<MovementType>('Arrival');
 
+  // Keep polling while the run is still in flight; stop once it completes or
+  // errors (both terminal). `isDetailComplete` narrows to the Complete shape,
+  // so anything not-complete and not-Error here is Pending/Running.
+  const isRunning = !!data && !isDetailComplete(data) && data.status !== 'Error';
+  // Prefer websocket push for this simulation; poll only while the socket is down.
+  const { connected } = useSimulationSocket(
+    isRunning && id ? `/ws/simulations/${id}/` : null,
+    refetch,
+  );
+  usePollWhile(isRunning && !connected, refetch);
+
   const backButton = (
     <Button
       icon="pi pi-chevron-left"
@@ -61,24 +73,27 @@ export default function MetricBasePage() {
   }
 
   if (!isDetailComplete(data)) {
+    const isError = data.status === 'Error';
     return (
       <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
         {backButton}
         <h1 className="text-2xl font-semibold text-slate-800">{data.name}</h1>
         <Message
-          severity={data.status === 'Error' ? 'error' : 'info'}
+          severity={isError ? 'error' : 'info'}
           text={
-            data.status === 'Error'
+            isError
               ? `Simulation failed: ${data.errorMessage ?? 'Unknown error'}`
               : `Simulation is ${data.status.toLowerCase()}. Metrics will appear once it completes.`
           }
         />
-        <p className="text-sm text-slate-500">
-          This page does not auto-refresh while the simulation is running. Use the button
-          below to check again.
-        </p>
+        {!isError && (
+          <p className="text-sm text-slate-500">
+            This page refreshes automatically — metrics will appear as soon as the
+            simulation completes.
+          </p>
+        )}
         <Button
-          label="Check again"
+          label={isError ? 'Retry' : 'Refresh now'}
           icon="pi pi-refresh"
           onClick={() => refetch()}
           className="self-start"

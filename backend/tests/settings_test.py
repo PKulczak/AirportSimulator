@@ -21,3 +21,9 @@ DRAMATIQ_BROKER = {
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
+
+# In-process channel layer for tests: exercises the websocket publish/consume
+# path (single process) without needing a running Redis or ASGI server.
+CHANNEL_LAYERS = {
+    "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"},
+}

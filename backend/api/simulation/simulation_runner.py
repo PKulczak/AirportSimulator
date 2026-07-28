@@ -6,6 +6,7 @@ import simpy
 from django.utils import timezone
 
 from api.models import Aircraft, Simulation, SimulationRunway, SimulationRunwayEvent
+from api.notifications import publish_simulation_status
 from api.simulation import constants
 from api.simulation.aircraft_data_generator import AircraftDataGenerator
 from api.simulation.closures import closure_process
@@ -37,6 +38,7 @@ class SimulationRunner:
         simulation.status = Simulation.Status.RUNNING
         simulation.started_at = timezone.now()
         simulation.save(update_fields=["status", "started_at"])
+        publish_simulation_status(simulation.id, simulation.status)
 
         try:
             self._execute(simulation)
@@ -48,11 +50,13 @@ class SimulationRunner:
             simulation.save(
                 update_fields=["status", "error_message", "completed_at"]
             )
+            publish_simulation_status(simulation.id, simulation.status)
             return
 
         simulation.status = Simulation.Status.COMPLETE
         simulation.completed_at = timezone.now()
         simulation.save(update_fields=["status", "completed_at"])
+        publish_simulation_status(simulation.id, simulation.status)
 
     # -- setup -----------------------------------------------------------
 

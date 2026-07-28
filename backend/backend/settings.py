@@ -34,9 +34,23 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "corsheaders",
+    "channels",
     "django_dramatiq",
     "api",
 ]
+
+# `daphne` must sit at the very top of INSTALLED_APPS so its ASGI-capable
+# runserver replaces Django's WSGI dev server (websockets need ASGI). The import
+# is guarded: the ASGI server dependency is optional at import time, so a missing
+# `daphne` never breaks the WSGI dev server or the test suite — only live
+# websockets need an ASGI server, and any one works against `backend.asgi`
+# (e.g. `daphne backend.asgi:application` or `hypercorn backend.asgi:application`).
+try:
+    import daphne  # noqa: F401
+
+    INSTALLED_APPS.insert(0, "daphne")
+except ImportError:
+    pass
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -68,6 +82,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "backend.wsgi.application"
+ASGI_APPLICATION = "backend.asgi.application"
 
 
 # Database
@@ -183,6 +198,21 @@ DRAMATIQ_BROKER = {
         "dramatiq.middleware.Retries",
         "django_dramatiq.middleware.DbConnectionsMiddleware",
     ],
+}
+
+
+# Channels (websockets) — status push to the frontend.
+# Cross-process: the dramatiq worker that runs a simulation pushes status
+# transitions to websocket clients connected to the web server, so the channel
+# layer must be Redis-backed (in-memory only works within a single process).
+# Reuses the dramatiq Redis instance by default; override with CHANNEL_LAYER_URL.
+CHANNEL_LAYER_URL = env("CHANNEL_LAYER_URL", default=QUEUE_URL)
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [CHANNEL_LAYER_URL]},
+    },
 }
 
 

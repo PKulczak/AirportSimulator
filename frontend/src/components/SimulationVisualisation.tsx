@@ -4,7 +4,8 @@ import { Slider, type SliderChangeEvent } from 'primereact/slider';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { Sidebar } from 'primereact/sidebar';
-import { useGet } from '../functions/axios';
+import { useGet, usePollWhile } from '../functions/axios';
+import { useSimulationSocket } from '../functions/socket';
 import { useRunways } from '../context/RunwayContext';
 import {
   deriveRunwayStates,
@@ -48,6 +49,17 @@ export default function SimulationVisualisation() {
   );
 
   const events = useMemo(() => (data ? processEvents(data) : []), [data]);
+
+  // Poll while the run is still in flight so the replay appears on its own once
+  // it completes; stop at the terminal Complete/Error states. Kept above the
+  // early returns below so the hook always runs (rules of hooks).
+  const isRunning = !!raw && raw.status !== 'Complete' && raw.status !== 'Error';
+  // Prefer websocket push for this simulation; poll only while the socket is down.
+  const { connected } = useSimulationSocket(
+    isRunning && id ? `/ws/simulations/${id}/` : null,
+    refetch,
+  );
+  usePollWhile(isRunning && !connected, refetch);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -147,22 +159,30 @@ export default function SimulationVisualisation() {
   }
 
   if (!data) {
+    const isError = raw.status === 'Error';
     return (
       <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
         <h1 className="text-2xl font-semibold text-slate-800">{raw.name}</h1>
         <Message
-          severity={raw.status === 'Error' ? 'error' : 'info'}
+          severity={isError ? 'error' : 'info'}
           text={
-            raw.status === 'Error'
+            isError
               ? 'Simulation failed — no replay data available.'
               : `Simulation is ${raw.status.toLowerCase()}. Replay will be available once it completes.`
           }
         />
-        <p className="text-sm text-slate-500">
-          This page does not auto-refresh while the simulation is running. Use the button
-          below to check again.
-        </p>
-        <Button label="Check again" icon="pi pi-refresh" onClick={() => refetch()} className="self-start" />
+        {!isError && (
+          <p className="text-sm text-slate-500">
+            This page refreshes automatically — the replay will appear as soon as the
+            simulation completes.
+          </p>
+        )}
+        <Button
+          label={isError ? 'Retry' : 'Refresh now'}
+          icon="pi pi-refresh"
+          onClick={() => refetch()}
+          className="self-start"
+        />
       </div>
     );
   }

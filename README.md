@@ -26,7 +26,8 @@ Two independent apps, developed together:
 
 - Python 3 and Node.js
 - PostgreSQL (default local database name: `airportdb`)
-- Redis (used as the `dramatiq` task queue broker)
+- Redis (used both as the `dramatiq` task queue broker and as the Django Channels layer
+  that powers WebSocket status updates)
 
 ## Getting started
 
@@ -37,11 +38,21 @@ cd backend
 pip install -r requirements.txt
 cp .env.example .env   # fill in DB/Redis vars for your local setup
 python manage.py migrate
-python manage.py runserver          # API at http://localhost:8000
+python manage.py runserver          # HTTP API + WebSockets at http://localhost:8000
+```
+
+`runserver` serves **both** the HTTP API and the WebSocket status feed: `daphne` (installed
+from `requirements.txt`) makes Django's dev server ASGI-capable, so no separate process is
+needed. If `daphne` can't be installed in your environment, serve the ASGI app with any
+other ASGI server instead — for example:
+
+```bash
+hypercorn backend.asgi:application --bind 0.0.0.0:8000
+# or: daphne -b 0.0.0.0 -p 8000 backend.asgi:application
 ```
 
 In a **separate terminal**, run the task queue worker — this is required for any created
-simulation to actually execute:
+simulation to actually execute (and for it to push status updates over the WebSocket):
 
 ```bash
 cd backend
@@ -77,9 +88,12 @@ the browser.
 
 - The `rundramatiq` worker must be restarted manually to pick up code changes to the
   simulation engine or task definitions — it doesn't hot-reload like `runserver` does.
-- There's no websocket/push mechanism: simulation status is only observable by
-  re-fetching from the API, and the history/detail/visualisation pages don't
-  auto-refresh while a simulation is still running.
+  Likewise, if you serve the app with an explicit ASGI server (e.g. `hypercorn`) instead
+  of `runserver`, restart it manually after backend changes — it won't auto-reload.
+- Simulation status updates are pushed to the frontend over WebSockets (Django Channels,
+  backed by Redis): the history, detail, and visualisation pages update live while a run
+  is in progress. If the socket can't connect, the pages fall back to polling the API, so
+  the UI still updates on its own without a manual refresh.
 - [CLAUDE.md](CLAUDE.md) documents this repo's conventions and dev-process quirks for
   AI coding agents (e.g. Claude Code) working in it — not needed for manual development,
   but useful if you're using one.

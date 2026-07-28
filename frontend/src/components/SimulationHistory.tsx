@@ -12,7 +12,8 @@ import {
   faPlaneArrival,
   faPlaneDeparture,
 } from '@fortawesome/free-solid-svg-icons';
-import { useGet } from '../functions/axios';
+import { useGet, usePollWhile } from '../functions/axios';
+import { useSimulationSocket } from '../functions/socket';
 import type { Page } from '../types/common';
 import type { Simulation, SimulationStatus } from '../types/simulation';
 import SimulationFormDialog from './SimulationFormDialog';
@@ -66,6 +67,22 @@ export default function SimulationHistory() {
 
   const { data, loading, error, refetch } = useGet<Page<Simulation>>(url);
 
+  // Poll only while the current page shows a run that could still change state.
+  const hasActiveRuns = useMemo(
+    () =>
+      (data?.results ?? []).some(
+        (s) => s.status === 'Pending' || s.status === 'Running',
+      ),
+    [data],
+  );
+  // Prefer websocket push (global feed) for status changes; poll only as a
+  // fallback while the socket is down, and only when a run could still change.
+  const { connected } = useSimulationSocket(
+    hasActiveRuns ? '/ws/simulations/' : null,
+    refetch,
+  );
+  usePollWhile(hasActiveRuns && !connected, refetch);
+
   const onPage = (event: DataTablePageEvent) => {
     setPage(Math.floor((event.first ?? 0) / PAGE_SIZE) + 1);
   };
@@ -108,7 +125,9 @@ export default function SimulationHistory() {
 
           <DataTable
             value={data?.results ?? []}
-            loading={loading}
+            // Only show the overlay on the first load; background polls refetch
+            // in place so the table shouldn't flash a spinner every few seconds.
+            loading={loading && !data}
             lazy
             paginator
             first={(page - 1) * PAGE_SIZE}

@@ -83,8 +83,10 @@ function useAxios<TResponse>(method: HttpMethod, url: string, config?: AxiosRequ
  * Fires automatically on mount and whenever `url` changes. Callers that need
  * to refetch on query-param changes should bake those params into `url`
  * (e.g. via a template string) so the effect dependency captures them.
- * Exposes `refetch()` for manual refresh (the only re-fetch mechanism in this
- * app — there is deliberately no polling, see CLAUDE.md).
+ * Exposes `refetch()` for manual refresh. Components that need to reflect
+ * async status changes (e.g. SimulationHistory) drive their own polling by
+ * calling `refetch()` on an interval while a run is still Pending/Running;
+ * the hook itself does no polling.
  */
 export function useGet<TResponse>(
   url: string | null,
@@ -106,6 +108,30 @@ export function useGet<TResponse>(
   }, [url, execute]);
 
   return { data, loading, error, refetch };
+}
+
+/** Default cadence for the polling hook below. */
+export const POLL_INTERVAL_MS = 4000;
+
+/**
+ * Calls `refetch` on a fixed interval while `active` is true, and stops as soon
+ * as it flips false or the component unmounts. Used by pages that must reflect
+ * async simulation status changes (Pending/Running -> Complete/Error), since
+ * the API has no push channel — see CLAUDE.md. `refetch` should be a stable
+ * reference (e.g. from `useGet`) so the interval isn't torn down every render.
+ */
+export function usePollWhile(
+  active: boolean,
+  refetch: () => void,
+  intervalMs: number = POLL_INTERVAL_MS,
+): void {
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const handle = setInterval(refetch, intervalMs);
+    return () => clearInterval(handle);
+  }, [active, refetch, intervalMs]);
 }
 
 /** Does not auto-fire; exposes `execute(body)` for imperative submission (e.g. forms). */
