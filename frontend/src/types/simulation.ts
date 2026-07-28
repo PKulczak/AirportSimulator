@@ -27,5 +27,7 @@ export interface CreateSimulationRequest {
   maxWaitMinutes: number;
   aircraftSpeedKnots?: number;
   includeClosures: boolean;
+  /** Optional reproducibility seed; omit for a fresh random run. */
+  randomSeed?: number;
   runways: SimulationRunwayConfig[];
 }

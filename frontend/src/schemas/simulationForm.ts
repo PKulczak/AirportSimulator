@@ -34,6 +34,14 @@ export const simulationFormSchema = z
       .max(1440, 'Must be 24 hours or less'),
     maxWaitMinutes: z.number().int().min(1, 'Must be at least 1 minute'),
     includeClosures: z.boolean(),
+    // Optional reproducibility seed; null (blank field) = a fresh random run.
+    // Bounds mirror the backend DTO (non-negative signed-32-bit int).
+    randomSeed: z
+      .number()
+      .int('Seed must be a whole number')
+      .min(0, 'Seed must be zero or greater')
+      .max(2147483647, 'Seed is too large')
+      .nullable(),
     runwayIds: z
       .array(z.number())
       .min(1, 'Select at least one runway')
@@ -129,6 +137,7 @@ export const defaultSimulationFormValues: SimulationFormValues = {
   durationMinutes: 120,
   maxWaitMinutes: 20,
   includeClosures: false,
+  randomSeed: null,
   runwayIds: [],
   runwayModes: {},
   runwayInitialStatus: {},
@@ -144,6 +153,8 @@ export function toCreateSimulationRequest(
     durationMinutes: values.durationMinutes,
     maxWaitMinutes: values.maxWaitMinutes,
     includeClosures: values.includeClosures,
+    // Omit entirely when blank so the backend treats it as "no seed" (random).
+    ...(values.randomSeed != null ? { randomSeed: values.randomSeed } : {}),
     runways: values.runwayIds.map((runwayId) => ({
       runwayId,
       operatingMode: values.runwayModes[String(runwayId)] as OperatingMode,

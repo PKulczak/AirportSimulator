@@ -117,7 +117,7 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr_1fr]">
         <div className="flex flex-col gap-1">
           <label htmlFor="name" className="min-h-10 text-sm font-bold text-slate-800">
             Name of Simulation {REQUIRED_MARK}
@@ -154,6 +154,35 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
               />
             )}
           />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="randomSeed" className="min-h-10 text-sm font-bold text-slate-800">
+            Random Seed (optional)
+          </label>
+          <Controller
+            name="randomSeed"
+            control={control}
+            render={({ field }) => (
+              <InputNumber
+                inputId="randomSeed"
+                value={field.value}
+                onValueChange={(e) => field.onChange(e.value ?? null)}
+                min={0}
+                max={2147483647}
+                useGrouping={false}
+                placeholder="Leave blank for random"
+                className="w-full"
+                inputClassName="w-full"
+              />
+            )}
+          />
+          <small className="text-slate-500">
+            Set to reproduce an identical run; blank generates a fresh one.
+          </small>
+          {errors.randomSeed && (
+            <small className="text-red-600">{errors.randomSeed.message}</small>
+          )}
         </div>
       </div>
 

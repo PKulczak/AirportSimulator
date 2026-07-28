@@ -17,6 +17,16 @@ NAME_PATTERN = re.compile(r"^[\w\s.,'()#:/&-]+$")
 class SimulationCreationDto(serializers.ModelSerializer):
     runways = SimulationRunwayCreationDto(many=True)
     aircraft_speed_knots = serializers.IntegerField(required=False, min_value=1)
+    # Optional reproducibility seed; blank/null = a fresh random run. Bounded to
+    # a non-negative 32-bit int: numpy's `default_rng` rejects negative seeds
+    # (raising mid-run and marking the sim Error), and the model's IntegerField
+    # can't store values beyond the signed-32-bit range.
+    random_seed = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=0,
+        max_value=2147483647,
+    )
     arrival_rate_per_hour = serializers.IntegerField(
         min_value=0,
         max_value=100,

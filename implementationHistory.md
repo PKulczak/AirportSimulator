@@ -26,6 +26,52 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-28 — Slice 3.1 — Accept an optional seed on create
+
+**Slice:** 3.1 — Accept an optional seed on create (Epic 3, Reproducibility)
+**Status:** Done (code complete + verified via tests; live activation note below)
+
+**Backend changes**
+- [backend/api/serializers/simulation_creation_dto.py](backend/api/serializers/simulation_creation_dto.py)
+  — `random_seed` was already listed in the DTO's `fields` (so it was technically accepted),
+  but with no explicit validation. Added an explicit `IntegerField` declaration:
+  `required=False, allow_null=True, min_value=0, max_value=2147483647`. The lower bound
+  guards against numpy's `default_rng` raising on a negative seed (which would mark the run
+  `Error` mid-execution); the upper bound matches the model's signed-32-bit `IntegerField`.
+  The engine already seeds from `simulation.random_seed` in both
+  `aircraft_data_generator.py` and `simulation_runner.py`, so no engine change was needed.
+
+**Frontend changes**
+- [frontend/src/types/simulation.ts](frontend/src/types/simulation.ts) — added optional
+  `randomSeed?: number` to `CreateSimulationRequest`.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) — added a
+  nullable `randomSeed` field (int, 0…2147483647) with default `null`; `toCreateSimulationRequest`
+  omits the key entirely when blank so the backend treats it as "no seed" (random).
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — added an
+  optional "Random Seed" `InputNumber` (blank = random) beside the closures selector; widened
+  the top grid to `[2fr_1fr_1fr]` to fit it on one row.
+
+**Verification**
+- New engine test [seed_reproducibility_test.py](backend/tests/simulation/seed_reproducibility_test.py):
+  same seed + identical config → byte-identical per-aircraft outcome fingerprint (callsign,
+  operator, origin/destination, movement, outcome, was_success); different seeds → different.
+- New feature tests in [simulation_creation_test.py](backend/tests/feature/simulation_creation_test.py):
+  create endpoint accepts + persists `randomSeed`, defaults it to null when omitted, and rejects
+  a negative seed with 400. **Full suite: 99 passed** (was 94; +5).
+- Frontend `tsc -b` + `eslint` clean.
+
+**Notes**
+- Ran pytest via `backend/venv/Scripts/python.exe` — the venv has `channels` (from Slice 1.4);
+  the bare system `python` does not, so `django.setup()` fails there.
+- The create *response* is serialised with `SimulationListDto`, which does not echo the seed
+  back — surfacing the seed on the detail page is Slice 3.2, so the feature tests assert
+  persistence via the DB rather than the response body.
+- Not activated in a live stack: no airport web server was running at implementation time
+  (only a stray `dramatiq` wrapper; the `vite preview :4173` processes belong to a different
+  project). The DTO change is served by the web process, so a hypercorn/runserver restart is
+  needed to exercise it against a live request — verified via the DRF `APIClient` feature test
+  instead.
+
 ## 2026-07-28 — Runway Info: dot colour by open-time + closure-reason icons
 
 **Slice:** n/a (ad-hoc UI request)
