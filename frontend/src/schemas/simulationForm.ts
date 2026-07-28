@@ -15,17 +15,38 @@ export const operationalStatusSchema = z.enum([
 /** Mirrors the backend's `SimulationCreationDto.MAX_RUNWAYS` cap. */
 export const MAX_RUNWAYS = 10;
 
+/** Allowed simulation-name characters — mirrors the backend `NAME_PATTERN`
+ * (letters/numbers/whitespace + basic punctuation). Shared by the create form
+ * and the rename dialog so both accept exactly the same names. */
+export const SIMULATION_NAME_REGEX = /^[\p{L}\p{N}\s.,'()_#:/&-]+$/u;
+export const SIMULATION_NAME_MAX = 120;
+export const SIMULATION_NAME_INVALID_MESSAGE =
+  'Name can only contain letters, numbers, spaces, and basic punctuation';
+
+/** Client-side name check shared by the create form and rename dialog; returns
+ * an error message or null. */
+export function validateSimulationName(raw: string): string | null {
+  const name = raw.trim();
+  if (!name) {
+    return 'Name is required';
+  }
+  if (name.length > SIMULATION_NAME_MAX) {
+    return 'Name is too long';
+  }
+  if (!SIMULATION_NAME_REGEX.test(name)) {
+    return SIMULATION_NAME_INVALID_MESSAGE;
+  }
+  return null;
+}
+
 export const simulationFormSchema = z
   .object({
     name: z
       .string()
       .trim()
       .min(1, 'Name is required')
-      .max(120, 'Name is too long')
-      .regex(
-        /^[\p{L}\p{N}\s.,'()_#:/&-]+$/u,
-        'Name can only contain letters, numbers, spaces, and basic punctuation',
-      ),
+      .max(SIMULATION_NAME_MAX, 'Name is too long')
+      .regex(SIMULATION_NAME_REGEX, SIMULATION_NAME_INVALID_MESSAGE),
     arrivalRate: z.number().min(0, 'Must be zero or greater').max(100, 'Must be 100 or fewer per hour'),
     departureRate: z.number().min(0, 'Must be zero or greater').max(100, 'Must be 100 or fewer per hour'),
     durationMinutes: z

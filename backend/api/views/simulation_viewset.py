@@ -8,6 +8,7 @@ from api.models import Simulation
 from api.serializers.simulation_creation_dto import SimulationCreationDto
 from api.serializers.simulation_detail_dto import SimulationDetailDto
 from api.serializers.simulation_list_dto import SimulationListDto
+from api.serializers.simulation_rename_dto import SimulationRenameDto
 from api.serializers.simulation_visualisation_dto import SimulationVisualisationDto
 from api.tasks import run_simulation
 
@@ -15,12 +16,16 @@ from api.tasks import run_simulation
 class SimulationViewset(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
     queryset = Simulation.objects.all()
     filter_backends = [SearchFilter]
     search_fields = ["name"]
+    # PATCH (rename) only — a run's config is immutable once created, so PUT
+    # (full replace) is intentionally excluded (405).
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         if self.action == "list":
@@ -30,6 +35,8 @@ class SimulationViewset(
     def get_serializer_class(self):
         if self.action == "create":
             return SimulationCreationDto
+        if self.action in ("update", "partial_update"):
+            return SimulationRenameDto
         return SimulationListDto
 
     def create(self, request, *args, **kwargs):

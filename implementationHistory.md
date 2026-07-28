@@ -26,6 +26,47 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-28 — Slice 2.2 — Rename a simulation
+
+**Slice:** 2.2 — Rename a simulation (Epic 2, Simulation management)
+**Status:** Done (code + tests + live-verified)
+
+**Backend changes**
+- [backend/api/serializers/simulation_rename_dto.py](backend/api/serializers/simulation_rename_dto.py)
+  (new) — `SimulationRenameDto` exposes only `name` (+ read-only `id`) so a PATCH can't
+  silently change rates/runways/status. Reuses the creation DTO's `NAME_PATTERN`; also
+  `.strip()`s and rejects blank.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) — added
+  `mixins.UpdateModelMixin`, routed `update`/`partial_update` to the rename DTO, and set
+  `http_method_names` to exclude **PUT** (full replace → 405); a run's config is immutable
+  after create, so only PATCH-rename is allowed.
+
+**Frontend changes**
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) — extracted
+  `SIMULATION_NAME_REGEX`/`SIMULATION_NAME_MAX`/`validateSimulationName()` and refactored the
+  create form's `name` field to use them, so the create form and rename dialog validate
+  identically.
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — a pencil button in the right-hand actions column (beside the view chevron) opens a
+  "Rename simulation" `Dialog` with a pre-filled `InputText`. Save is disabled while the name
+  is invalid or unchanged; Enter submits; validates client-side (same rule as the backend) and
+  surfaces server errors. On success it PATCHes via `apiClient` and refetches. Current row
+  layout: trash (far-left column, from Slice 2.1's trial) · Name · … · Status · [rename +
+  view] (right column).
+
+**Verification**
+- [simulation_rename_test.py](backend/tests/feature/simulation_rename_test.py) (8 tests):
+  PATCH updates name; trims whitespace; rejects invalid chars and blank; allows basic
+  punctuation; ignores other config fields (rates/duration/status unchanged); PUT → 405;
+  unknown id → 404. **Full suite: 119 passed** (+8).
+- Frontend `tsc -b` + `eslint` clean.
+- Restarted **hypercorn** (web-layer change, no autoreload); verified live: PATCH → 200 with
+  the name trimmed, emoji → 400, PUT → 405. Test sim deleted by explicit id afterward.
+
+**Notes**
+- Same `reverse("simulation-detail")` collision as Slice 2.1 — PATCH targets the path
+  `/api/simulations/{id}/` directly in tests (the name resolves to the metrics action).
+
 ## 2026-07-28 — Slice 2.1 — Delete a simulation
 
 **Slice:** 2.1 — Delete a simulation (Epic 2, Simulation management)

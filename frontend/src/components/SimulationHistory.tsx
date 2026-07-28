@@ -11,6 +11,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowsRotate,
   faChevronRight,
+  faPen,
   faPlaneArrival,
   faPlaneDeparture,
   faTrash,
@@ -23,6 +24,10 @@ import {
   usePollWhile,
 } from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
+import {
+  SIMULATION_NAME_MAX,
+  validateSimulationName,
+} from '../schemas/simulationForm';
 import type { Page } from '../types/common';
 import type { Simulation, SimulationStatus } from '../types/simulation';
 import SimulationFormDialog from './SimulationFormDialog';
@@ -59,6 +64,10 @@ export default function SimulationHistory() {
   const [deleteTarget, setDeleteTarget] = useState<Simulation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Simulation | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -124,6 +133,34 @@ export default function SimulationHistory() {
       setDeleteError('Failed to delete simulation. Please try again.');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const openRename = (simulation: Simulation) => {
+    setRenameError(null);
+    setRenameValue(simulation.name);
+    setRenameTarget(simulation);
+  };
+
+  const renameValidationError = validateSimulationName(renameValue);
+  const renameUnchanged = renameValue.trim() === renameTarget?.name;
+
+  const confirmRename = async () => {
+    if (!renameTarget || renameValidationError || renameUnchanged) {
+      return;
+    }
+    setRenaming(true);
+    setRenameError(null);
+    try {
+      await apiClient.patch(`/api/simulations/${renameTarget.id}/`, {
+        name: renameValue.trim(),
+      });
+      setRenameTarget(null);
+      refetch();
+    } catch {
+      setRenameError('Failed to rename simulation. Please try again.');
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -271,16 +308,29 @@ export default function SimulationHistory() {
               alignHeader="center"
               align="center"
               body={(row: Simulation) => (
-                <Button
-                  icon={<FontAwesomeIcon icon={faChevronRight} />}
-                  text
-                  aria-label="View details"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/simulation/${row.id}/detail`);
-                  }}
-                  className="!border-transparent !bg-transparent !text-brand-accent-active !text-lg"
-                />
+                <span className="inline-flex items-center">
+                  <Button
+                    icon={<FontAwesomeIcon icon={faPen} />}
+                    text
+                    aria-label={`Rename ${row.name}`}
+                    tooltip="Rename"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openRename(row);
+                    }}
+                    className="!border-transparent !bg-transparent !text-slate-500 !text-base"
+                  />
+                  <Button
+                    icon={<FontAwesomeIcon icon={faChevronRight} />}
+                    text
+                    aria-label="View details"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/simulation/${row.id}/detail`);
+                    }}
+                    className="!border-transparent !bg-transparent !text-brand-accent-active !text-lg"
+                  />
+                </span>
               )}
             />
           </DataTable>
@@ -327,6 +377,59 @@ export default function SimulationHistory() {
           results? This cannot be undone.
         </p>
         {deleteError && <Message severity="error" text={deleteError} className="mt-3 w-full" />}
+      </Dialog>
+
+      <Dialog
+        header="Rename simulation"
+        visible={renameTarget !== null}
+        onHide={() => {
+          if (!renaming) {
+            setRenameTarget(null);
+          }
+        }}
+        draggable={false}
+        dismissableMask={!renaming}
+        style={{ width: '28rem', maxWidth: '90vw' }}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              label="Cancel"
+              text
+              disabled={renaming}
+              onClick={() => setRenameTarget(null)}
+            />
+            <Button
+              label="Save"
+              loading={renaming}
+              disabled={!!renameValidationError || renameUnchanged}
+              onClick={confirmRename}
+              className="!border-brand-accent-active !bg-brand-accent-active !text-white"
+            />
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-1">
+          <label htmlFor="rename-input" className="text-sm font-bold text-slate-800">
+            Name
+          </label>
+          <InputText
+            id="rename-input"
+            value={renameValue}
+            maxLength={SIMULATION_NAME_MAX}
+            autoFocus
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                confirmRename();
+              }
+            }}
+            className={`bg-brand-bg ${renameValidationError && renameValue ? 'p-invalid' : ''}`}
+          />
+          {renameValue.length > 0 && renameValidationError && (
+            <small className="text-red-600">{renameValidationError}</small>
+          )}
+          {renameError && <Message severity="error" text={renameError} className="mt-2 w-full" />}
+        </div>
       </Dialog>
     </div>
   );
