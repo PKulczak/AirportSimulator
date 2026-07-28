@@ -26,6 +26,62 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-28 — Slice 2.4 — Cancel a Pending/Running simulation
+
+**Slice:** 2.4 — Cancel a Pending/Running simulation (Epic 2, Simulation management)
+**Status:** Done (code + tests + live-verified)
+
+**Model / migration**
+- [backend/api/models/simulation.py](backend/api/models/simulation.py) — added a `Cancelled`
+  status, a `TERMINAL_STATUSES` tuple, and a `cancel_requested` boolean. The flag is kept
+  separate from `status` on purpose: the web process (cancel endpoint) owns `cancel_requested`,
+  the worker owns `status`, so the two processes never race on one column.
+- Migration `0006_simulation_cancel_requested_alter_simulation_status` (applied to the dev DB).
+
+**Engine**
+- [backend/api/simulation/simulation_runner.py](backend/api/simulation/simulation_runner.py) —
+  new `SimulationCancelled` exception + a `_cancellation_watchdog` SimPy process that every
+  `CANCELLATION_POLL_MINUTES` (5, new in constants) re-reads `cancel_requested` from the DB and
+  raises to unwind `env.run()` at a step boundary (a safe point — no aircraft mid-operation).
+  `run()` now (a) skips a run whose status is already terminal (a Pending run the endpoint
+  moved straight to Cancelled), and (b) catches `SimulationCancelled` → status Cancelled
+  (distinct from the Error path). Stragglers are left Pending — a cancelled run intentionally
+  has no full result set.
+
+**API**
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) —
+  `POST /api/simulations/{id}/cancel/`: 409 if already terminal; a Pending run is marked
+  Cancelled immediately (with a WS publish); a Running run just gets `cancel_requested=True`
+  and the runner's watchdog finishes the transition.
+
+**Frontend**
+- `SimulationStatus` gained `Cancelled` ([types/simulation.ts](frontend/src/types/simulation.ts));
+  the visualisation wire type now reuses `SimulationStatus`
+  ([types/visualisation.ts](frontend/src/types/visualisation.ts)).
+- [SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx) — a cancel (ban) button
+  on Pending/Running rows opens a confirm dialog, POSTs cancel, and refetches; Cancelled renders
+  as a grey `secondary` tag.
+- [MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx) +
+  [SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx) — **`isRunning`
+  now means Pending/Running only** (previously "anything not Complete/Error"), so a Cancelled run
+  no longer polls forever; both show a "was cancelled — no metrics/replay" message with no
+  refresh button.
+
+**Verification**
+- [simulation_cancel_test.py](backend/tests/feature/simulation_cancel_test.py) (8 tests): endpoint
+  (Pending→Cancelled now; Running→flag-only; 409 when terminal; 404); runner (mid-run cancel ends
+  Cancelled with unresolved Pending aircraft — "no full result set"; already-Cancelled run is
+  skipped, never started; a normal run still Completes untouched by the watchdog). **Full suite:
+  131 passed** (+8). Frontend `tsc -b` + full `eslint` clean.
+- Applied the migration and restarted **both** worker (engine watchdog) and hypercorn (API/model),
+  confirming zero Redis-orphans and a single instance of each. Live: a big run cancelled while
+  genuinely `Running` ended `Cancelled` (watchdog path); an immediate cancel also ended
+  `Cancelled`; re-cancel → 409. Test sims deleted afterward.
+
+**Notes**
+- The mid-run cancel latency is bounded by `CANCELLATION_POLL_MINUTES` in sim-time (≈ sub-second
+  wall-clock for typical runs); tune the constant if a run needs snappier cancellation.
+
 ## 2026-07-28 — Slice 2.3 — Clone config into a new run
 
 **Slice:** 2.3 — Clone config into a new run (Epic 2, Simulation management)

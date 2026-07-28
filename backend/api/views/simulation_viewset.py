@@ -1,10 +1,12 @@
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
 from api.models import Simulation
+from api.notifications import publish_simulation_status
 from api.serializers.simulation_config_dto import SimulationConfigDto
 from api.serializers.simulation_creation_dto import SimulationCreationDto
 from api.serializers.simulation_detail_dto import SimulationDetailDto
@@ -58,6 +60,30 @@ class SimulationViewset(
         simulation = get_object_or_404(Simulation.objects.with_detail(), pk=pk)
         serializer = SimulationDetailDto(simulation)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        simulation = get_object_or_404(Simulation, pk=pk)
+        if simulation.status in Simulation.TERMINAL_STATUSES:
+            return Response(
+                {"detail": f"Simulation is already {simulation.get_status_display()}."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        simulation.cancel_requested = True
+        if simulation.status == Simulation.Status.PENDING:
+            # Not running yet — cancel outright. If a worker still picks it up,
+            # SimulationRunner.run() skips an already-terminal run.
+            simulation.status = Simulation.Status.CANCELLED
+            simulation.completed_at = timezone.now()
+            simulation.save(
+                update_fields=["cancel_requested", "status", "completed_at"]
+            )
+            publish_simulation_status(simulation.id, simulation.status)
+        else:  # Running — the runner's watchdog reads the flag and stops.
+            simulation.save(update_fields=["cancel_requested"])
+
+        return Response(SimulationListDto(simulation).data)
 
     @action(detail=True, methods=["get"])
     def config(self, request, pk=None):

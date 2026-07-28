@@ -57,10 +57,9 @@ export default function MetricBasePage() {
     }
   };
 
-  // Keep polling while the run is still in flight; stop once it completes or
-  // errors (both terminal). `isDetailComplete` narrows to the Complete shape,
-  // so anything not-complete and not-Error here is Pending/Running.
-  const isRunning = !!data && !isDetailComplete(data) && data.status !== 'Error';
+  // Keep polling only while the run is still in flight (Pending/Running); stop
+  // once it reaches any terminal state (Complete/Error/Cancelled).
+  const isRunning = !!data && (data.status === 'Pending' || data.status === 'Running');
   // Prefer websocket push for this simulation, refetching on (re)connect to
   // catch anything missed during the connect window. Keep polling while it
   // runs — fast when push is down, slow as a safety net when it's up — so a
@@ -101,6 +100,7 @@ export default function MetricBasePage() {
 
   if (!isDetailComplete(data)) {
     const isError = data.status === 'Error';
+    const isCancelled = data.status === 'Cancelled';
     return (
       <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
         <div
@@ -126,24 +126,28 @@ export default function MetricBasePage() {
             <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
               <h2 className="text-2xl font-semibold text-slate-800">{data.name}</h2>
               <Message
-                severity={isError ? 'error' : 'info'}
+                severity={isError ? 'error' : isCancelled ? 'warn' : 'info'}
                 text={
                   isError
                     ? `Simulation failed: ${data.errorMessage ?? 'Unknown error'}`
-                    : `Simulation is ${data.status.toLowerCase()}. Metrics will appear once it completes.`
+                    : isCancelled
+                      ? 'This simulation was cancelled — no metrics are available.'
+                      : `Simulation is ${data.status.toLowerCase()}. Metrics will appear once it completes.`
                 }
               />
-              {!isError && (
+              {!isError && !isCancelled && (
                 <p className="text-sm text-slate-500">
                   This page refreshes automatically — metrics will appear as soon as the
                   simulation completes.
                 </p>
               )}
-              <Button
-                label={isError ? 'Retry' : 'Refresh now'}
-                icon="pi pi-refresh"
-                onClick={() => refetch()}
-              />
+              {!isCancelled && (
+                <Button
+                  label={isError ? 'Retry' : 'Refresh now'}
+                  icon="pi pi-refresh"
+                  onClick={() => refetch()}
+                />
+              )}
             </div>
           </div>
         </div>

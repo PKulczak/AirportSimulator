@@ -55,10 +55,11 @@ export default function SimulationVisualisation() {
 
   const events = useMemo(() => (data ? processEvents(data) : []), [data]);
 
-  // Poll while the run is still in flight so the replay appears on its own once
-  // it completes; stop at the terminal Complete/Error states. Kept above the
-  // early returns below so the hook always runs (rules of hooks).
-  const isRunning = !!raw && raw.status !== 'Complete' && raw.status !== 'Error';
+  // Poll only while the run is still in flight (Pending/Running) so the replay
+  // appears on its own once it completes; stop at any terminal state
+  // (Complete/Error/Cancelled). Kept above the early returns below so the hook
+  // always runs (rules of hooks).
+  const isRunning = !!raw && (raw.status === 'Pending' || raw.status === 'Running');
   // Prefer websocket push for this simulation, refetching on (re)connect to
   // catch anything missed during the connect window. Keep polling while it
   // runs — fast when push is down, slow as a safety net when it's up — so a
@@ -169,6 +170,7 @@ export default function SimulationVisualisation() {
 
   if (!data) {
     const isError = raw.status === 'Error';
+    const isCancelled = raw.status === 'Cancelled';
     return (
       <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
         <div
@@ -199,24 +201,28 @@ export default function SimulationVisualisation() {
             <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
               <h2 className="text-2xl font-semibold text-slate-800">{raw.name}</h2>
               <Message
-                severity={isError ? 'error' : 'info'}
+                severity={isError ? 'error' : isCancelled ? 'warn' : 'info'}
                 text={
                   isError
                     ? 'Simulation failed — no replay data available.'
-                    : `Simulation is ${raw.status.toLowerCase()}. Replay will be available once it completes.`
+                    : isCancelled
+                      ? 'This simulation was cancelled — no replay is available.'
+                      : `Simulation is ${raw.status.toLowerCase()}. Replay will be available once it completes.`
                 }
               />
-              {!isError && (
+              {!isError && !isCancelled && (
                 <p className="text-sm text-slate-500">
                   This page refreshes automatically — the replay will appear as soon as the
                   simulation completes.
                 </p>
               )}
-              <Button
-                label={isError ? 'Retry' : 'Refresh now'}
-                icon="pi pi-refresh"
-                onClick={() => refetch()}
-              />
+              {!isCancelled && (
+                <Button
+                  label={isError ? 'Retry' : 'Refresh now'}
+                  icon="pi pi-refresh"
+                  onClick={() => refetch()}
+                />
+              )}
             </div>
           </div>
         </div>

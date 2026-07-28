@@ -16,14 +16,20 @@ from api.simulation.simulation_runway_wrapper import SimulationRunwayWrapper
 logger = logging.getLogger(__name__)
 
 
+class SimulationCancelled(Exception):
+    """Raised from the cancellation watchdog to unwind the SimPy run when a
+    cancel has been requested. Handled distinctly from a real error so the run
+    lands on Cancelled, not Error."""
+
+
 class SimulationRunner:
     """Owns the full lifecycle of running one `Simulation`.
 
     `run(id)` guarantees the simulation always lands on a terminal status
-    (Complete or Error) — any exception raised while building/advancing the
-    SimPy environment is caught here and persisted as Status.ERROR, never
-    re-raised, so a dramatiq worker never has to retry a partially-run
-    simulation.
+    (Complete, Error, or Cancelled) — any exception raised while
+    building/advancing the SimPy environment is caught here and persisted
+    (Error, or Cancelled for `SimulationCancelled`), never re-raised, so a
+    dramatiq worker never has to retry a partially-run simulation.
     """
 
     def run(self, id):
@@ -35,6 +41,14 @@ class SimulationRunner:
             logger.error("Simulation %s not found; nothing to run.", id)
             return
 
+        # Cancelled/finished before the worker got here (e.g. a Pending run the
+        # cancel endpoint already moved to Cancelled): don't run it at all.
+        if simulation.status in Simulation.TERMINAL_STATUSES:
+            logger.info(
+                "Simulation %s already %s; skipping run.", id, simulation.status
+            )
+            return
+
         simulation.status = Simulation.Status.RUNNING
         simulation.started_at = timezone.now()
         simulation.save(update_fields=["status", "started_at"])
@@ -42,6 +56,13 @@ class SimulationRunner:
 
         try:
             self._execute(simulation)
+        except SimulationCancelled:
+            logger.info("Simulation %s cancelled mid-run.", id)
+            simulation.status = Simulation.Status.CANCELLED
+            simulation.completed_at = timezone.now()
+            simulation.save(update_fields=["status", "completed_at"])
+            publish_simulation_status(simulation.id, simulation.status)
+            return
         except Exception as exc:  # noqa: BLE001 - intentionally broad, see docstring.
             logger.exception("Simulation %s failed", id)
             simulation.status = Simulation.Status.ERROR
@@ -99,6 +120,8 @@ class SimulationRunner:
 
         wrappers = [SimulationRunwayWrapper(env, sr) for sr in simulation_runways]
 
+        env.process(self._cancellation_watchdog(env, simulation))
+
         if simulation.include_closures:
             for sr, wrapper in zip(simulation_runways, wrappers):
                 env.process(closure_process(env, rng, sr, wrapper, to_datetime))
@@ -124,6 +147,19 @@ class SimulationRunner:
         # (should not normally happen; guarantees the "every aircraft reaches a
         # terminal outcome" invariant even under an unforeseen edge case).
         self._force_terminate_stragglers(simulation, to_datetime, env)
+
+    @staticmethod
+    def _cancellation_watchdog(env, simulation):
+        """Periodically re-reads `cancel_requested` from the DB; raising
+        `SimulationCancelled` unwinds `env.run()` at a SimPy step boundary (a
+        safe point — no aircraft is mid-operation between yields), so the run
+        stops promptly and lands on Cancelled. Bounded by `env.run(until=...)`,
+        so on a normal run it just gets abandoned at the horizon."""
+        while True:
+            yield env.timeout(constants.CANCELLATION_POLL_MINUTES)
+            simulation.refresh_from_db(fields=["cancel_requested"])
+            if simulation.cancel_requested:
+                raise SimulationCancelled()
 
     @staticmethod
     def _operation_minutes(aircraft_speed_knots):

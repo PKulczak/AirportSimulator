@@ -10,11 +10,19 @@ class Simulation(models.Model):
         RUNNING = "Running", "Running"
         COMPLETE = "Complete", "Complete"
         ERROR = "Error", "Error"
+        CANCELLED = "Cancelled", "Cancelled"
+
+    # Statuses a run can no longer leave — nothing more will run for it.
+    TERMINAL_STATUSES = (Status.COMPLETE, Status.ERROR, Status.CANCELLED)
 
     name = models.CharField(max_length=255)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
     )
+    # Set by the cancel endpoint; the runner polls it at safe points and stops.
+    # Kept separate from `status` so the web process and the worker never race
+    # to own the same column (the worker owns `status`).
+    cancel_requested = models.BooleanField(default=False)
 
     arrival_rate_per_hour = models.PositiveIntegerField()
     departure_rate_per_hour = models.PositiveIntegerField()

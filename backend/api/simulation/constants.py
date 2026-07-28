@@ -62,6 +62,13 @@ CLOSURE_MEAN_INTERVAL_MINUTES = 45.0
 CLOSURE_MEAN_DURATION_MINUTES = 12.0
 CLOSURE_MIN_DURATION_MINUTES = 3.0
 
+# --- Cancellation ---
+# How often (in sim-minutes) the runner re-reads Simulation.cancel_requested
+# from the DB to decide whether to abort. Small enough to stay responsive on a
+# long run, large enough that a normal run only issues a handful of extra
+# lightweight PK reads.
+CANCELLATION_POLL_MINUTES = 5.0
+
 # --- Floating point safety ---
 # `remaining = deadline - elapsed` can converge to a value too small, relative
 # to env.now's magnitude, for float64 addition to actually advance the clock

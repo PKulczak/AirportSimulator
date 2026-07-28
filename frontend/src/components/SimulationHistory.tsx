@@ -10,6 +10,7 @@ import { Message } from 'primereact/message';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowsRotate,
+  faBan,
   faChevronRight,
   faCopy,
   faPen,
@@ -39,12 +40,18 @@ import backgroundImage from '../assets/Background.png';
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 350;
 
-const STATUS_SEVERITY: Record<SimulationStatus, 'info' | 'warning' | 'success' | 'danger'> = {
+const STATUS_SEVERITY: Record<
+  SimulationStatus,
+  'info' | 'warning' | 'success' | 'danger' | 'secondary'
+> = {
   Pending: 'info',
   Running: 'warning',
   Complete: 'success',
   Error: 'danger',
+  Cancelled: 'secondary',
 };
+
+const ACTIVE_STATUSES: SimulationStatus[] = ['Pending', 'Running'];
 
 /** e.g. { date: "26/06/2026", time: "12:17" } — a fixed format so it doesn't
  * depend on the viewer's browser locale, split across two lines to match the
@@ -67,6 +74,9 @@ export default function SimulationHistory() {
   const [formInitialValues, setFormInitialValues] = useState<SimulationFormValues | undefined>();
   const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Simulation | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Simulation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -192,6 +202,23 @@ export default function SimulationHistory() {
     }
   };
 
+  const confirmCancel = async () => {
+    if (!cancelTarget) {
+      return;
+    }
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await apiClient.post(`/api/simulations/${cancelTarget.id}/cancel/`);
+      setCancelTarget(null);
+      refetch();
+    } catch {
+      setCancelError('Failed to cancel simulation. It may have already finished.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   return (
     <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
       <div
@@ -250,20 +277,37 @@ export default function SimulationHistory() {
               alignHeader="center"
               align="center"
               headerStyle={{ width: '3rem' }}
-              body={(row: Simulation) => (
-                <Button
-                  icon={<FontAwesomeIcon icon={faTrash} />}
-                  text
-                  aria-label={`Delete ${row.name}`}
-                  tooltip="Delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteError(null);
-                    setDeleteTarget(row);
-                  }}
-                  className="!border-transparent !bg-transparent !text-red-600 !text-lg"
-                />
-              )}
+              body={(row: Simulation) =>
+                ACTIVE_STATUSES.includes(row.status) ? (
+                  // While a run is in flight, this slot cancels it; once it's
+                  // finished it becomes the delete action.
+                  <Button
+                    icon={<FontAwesomeIcon icon={faBan} />}
+                    text
+                    aria-label={`Cancel ${row.name}`}
+                    tooltip="Cancel run"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCancelError(null);
+                      setCancelTarget(row);
+                    }}
+                    className="!border-transparent !bg-transparent !text-amber-600 !text-lg"
+                  />
+                ) : (
+                  <Button
+                    icon={<FontAwesomeIcon icon={faTrash} />}
+                    text
+                    aria-label={`Delete ${row.name}`}
+                    tooltip="Delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteError(null);
+                      setDeleteTarget(row);
+                    }}
+                    className="!border-transparent !bg-transparent !text-red-600 !text-lg"
+                  />
+                )
+              }
             />
             <Column
               field="name"
@@ -475,6 +519,42 @@ export default function SimulationHistory() {
           )}
           {renameError && <Message severity="error" text={renameError} className="mt-2 w-full" />}
         </div>
+      </Dialog>
+
+      <Dialog
+        header="Cancel simulation"
+        visible={cancelTarget !== null}
+        onHide={() => {
+          if (!cancelling) {
+            setCancelTarget(null);
+          }
+        }}
+        draggable={false}
+        dismissableMask={!cancelling}
+        style={{ width: '28rem', maxWidth: '90vw' }}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              label="Keep running"
+              text
+              disabled={cancelling}
+              onClick={() => setCancelTarget(null)}
+            />
+            <Button
+              label="Cancel run"
+              icon={<FontAwesomeIcon icon={faBan} className="mr-2" />}
+              loading={cancelling}
+              onClick={confirmCancel}
+              className="!border-amber-600 !bg-amber-600 !text-white"
+            />
+          </div>
+        }
+      >
+        <p className="text-slate-700">
+          Stop <span className="font-semibold">{cancelTarget?.name}</span>? It will be marked
+          Cancelled and won’t finish. Its config stays available to duplicate.
+        </p>
+        {cancelError && <Message severity="error" text={cancelError} className="mt-3 w-full" />}
       </Dialog>
     </div>
   );

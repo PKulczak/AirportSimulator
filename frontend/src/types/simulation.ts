@@ -1,6 +1,6 @@
 import type { SimulationRunwayConfig } from './runway';
 
-export type SimulationStatus = 'Pending' | 'Running' | 'Complete' | 'Error';
+export type SimulationStatus = 'Pending' | 'Running' | 'Complete' | 'Error' | 'Cancelled';
 
 /** List-shape DTO, from GET /api/simulations/ and the create response. */
 export interface Simulation {

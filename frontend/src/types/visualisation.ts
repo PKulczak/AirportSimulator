@@ -1,4 +1,5 @@
 import type { OperatingMode } from './runway';
+import type { SimulationStatus } from './simulation';
 
 export type MovementType = 'Arrival' | 'Departure';
 export type AircraftOutcome = 'Pending' | 'Success' | 'Diverted' | 'Cancelled';
@@ -62,7 +63,7 @@ export interface RunwayVisualisationWire {
 export interface VisualisationResponseWire {
   id: number;
   name: string;
-  status: 'Pending' | 'Running' | 'Complete' | 'Error';
+  status: SimulationStatus;
   startedAt: string | null;
   durationMinutes: number;
   maxWaitMinutes: number;
