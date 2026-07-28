@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { CreateSimulationRequest } from '../types/simulation';
+import type { SimulationDetail } from '../types/metrics';
 import type { OperatingMode, OperationalStatus } from '../types/runway';
 
 export const operatingModeSchema = z.enum(['ArrivalsOnly', 'DeparturesOnly', 'Mixed']);
@@ -160,6 +161,36 @@ export function toCreateSimulationRequest(
       operatingMode: values.runwayModes[String(runwayId)] as OperatingMode,
       operationalStatus:
         (values.runwayInitialStatus[String(runwayId)] as OperationalStatus) ?? 'Available',
+    })),
+  };
+}
+
+/** Backend name max is 255; the create form caps at 120. Keep re-run names
+ * within that so a re-run's name would itself pass the create form's rules. */
+function rerunName(base: string): string {
+  const suffix = ' (re-run)';
+  const room = 120 - suffix.length;
+  const trimmed = base.length > room ? base.slice(0, room) : base;
+  return `${trimmed}${suffix}`;
+}
+
+/** Builds a create request that reproduces a completed run: identical config
+ * and, crucially, its fixed `randomSeed` and each runway's *initial* status
+ * (not the possibly-closure-mutated end-of-run status). */
+export function detailToRerunRequest(detail: SimulationDetail): CreateSimulationRequest {
+  return {
+    name: rerunName(detail.name),
+    arrivalRatePerHour: detail.arrivalRatePerHour,
+    departureRatePerHour: detail.departureRatePerHour,
+    durationMinutes: detail.durationMinutes,
+    maxWaitMinutes: detail.maxWaitMinutes,
+    aircraftSpeedKnots: detail.aircraftSpeedKnots,
+    includeClosures: detail.includeClosures,
+    ...(detail.randomSeed != null ? { randomSeed: detail.randomSeed } : {}),
+    runways: detail.runwayStats.map((runway) => ({
+      runwayId: runway.runwayId,
+      operatingMode: runway.operatingMode,
+      operationalStatus: runway.initialOperationalStatus,
     })),
   };
 }

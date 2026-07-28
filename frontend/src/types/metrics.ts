@@ -33,7 +33,10 @@ export interface RunwayStat {
   runwayId: number;
   identifier: string;
   operatingMode: OperatingMode;
+  /** End-of-run status (mutated by random closures during the run). */
   operationalStatus: OperationalStatus;
+  /** Status as configured at creation — use this to reproduce/clone the run. */
+  initialOperationalStatus: OperationalStatus;
   totalAssigned: number;
   successCount: number;
   closureCount: number;
@@ -66,6 +69,8 @@ export interface SimulationDetail {
   maxWaitMinutes: number;
   aircraftSpeedKnots: number;
   includeClosures: boolean;
+  /** Reproducibility seed, or null if the run used a fresh random seed. */
+  randomSeed: number | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;

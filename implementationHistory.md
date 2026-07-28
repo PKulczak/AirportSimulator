@@ -26,6 +26,113 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-28 — Slices 3.1 + 3.2 activated in the dev environment
+
+**Status:** Done — seed + re-run now live in dev.
+
+**Symptom reported:** a set seed showed as "Random" on the detail page and no re-run
+button appeared.
+
+**Diagnosis:** not a code bug — stale server/worker processes. The running **hypercorn**
+(:8000, started 11:35, no autoreload) predated this session's detail-DTO edit, so
+`GET /api/simulations/{id}/detail/` returned **no `randomSeed` key** → the frontend read it
+as undefined → "Random" + button hidden. Confirmed live: created a seeded sim, detail
+response was missing `randomSeed`. The dramatiq worker (started 10:39) was likewise on
+pre-fix engine code.
+
+**What changed operationally**
+- Killed the old hypercorn tree and dramatiq worker tree (incl. their `multiprocessing`
+  children), then confirmed **zero** processes connected to the Redis broker
+  (10.11.90.45:6379) and port 8000 free — no surviving orphans.
+- Started exactly one fresh **hypercorn** (`backend.asgi:application` on :8000) and one fresh
+  **`manage.py rundramatiq`** worker as tracked background tasks. Verified via the precise
+  `hypercorn.exe`/`dramatiq.exe` process list that there is exactly one of each (a couple of
+  transient shell wrappers from a failed task attempt appeared briefly and exited; no
+  duplicate servers/workers remain).
+
+**Live verification (real worker → Redis → hypercorn)**
+- `GET /api/simulations/95/detail/` (seed persisted earlier under the old server) now returns
+  `randomSeed: 777001` and each `runwayStats[]` carries `initialOperationalStatus`.
+- Full re-run loop end-to-end: created a seeded run (seed 424242, closures on, one runway
+  starting SnowClearance), rebuilt the config from its detail response (mirroring
+  `detailToRerunRequest`, using `initialOperationalStatus`), re-ran → **identical**
+  `outcomeCounts` (15/47/58/0/120), `successRate` (12.5), and `closureEventCount` (7). This
+  exercises the fresh worker's closure-determinism fix through the real queue.
+
+**Notes**
+- Frontend (vite :3000, HMR) already had the new code; with the backend now returning
+  `randomSeed`, the detail page shows the seed and the re-run button. A hard refresh clears
+  any stale bundle if needed.
+- Left diagnostic sims in the dev DB: ids 95, 96, 97 (no delete endpoint until Slice 2.1).
+- hypercorn here runs **without autoreload** — future backend changes still need a manual
+  hypercorn + worker restart to take effect (same discipline as always).
+
+## 2026-07-28 — Slice 3.2 — Surface seed + "re-run with same seed"
+
+**Slice:** 3.2 — Surface seed + re-run with same seed (Epic 3, Reproducibility)
+**Status:** Done (code complete + verified via tests; live activation note below)
+**Note:** Slice 2.3 (generic clone) isn't built yet, so this ships a self-contained
+re-run rather than composing with it.
+
+**Engine bug fixed (the important part)**
+- [backend/api/simulation/simulation_runway_wrapper.py](backend/api/simulation/simulation_runway_wrapper.py)
+  — `_queued_processes` was a plain `set()`. `close()` iterates it to interrupt the
+  aircraft still queued for a closing runway, and **set iteration over process objects is
+  id()/hash-ordered — nondeterministic between runs.** That order decides which interrupted
+  aircraft re-requests (and re-wins) the runway first, so *same seed + closures produced
+  different outcomes every run* — silently defeating Epic 3's whole premise for
+  closure-enabled runs. Switched to an insertion-ordered dict-as-ordered-set
+  (`{}` + `[process] = None` / `.pop(process, None)`); `close()`'s `list(...)`/`.clear()`
+  are unchanged. Registration order is driven by SimPy scheduling, which is deterministic
+  under a fixed seed, so interruption order is now deterministic too.
+
+**Backend changes**
+- [backend/api/serializers/simulation_detail_dto.py](backend/api/serializers/simulation_detail_dto.py)
+  — added `random_seed` to the detail fields; added `_initial_operational_status()` +
+  exposed it per runway as `initial_operational_status`. `operational_status` on the row is
+  mutated by closures during the run (a trailing, never-reopened closure leaves a
+  started-Available runway reading back as closed), so the mutated value can't be used to
+  reproduce the start config. A runway started closed gets a CLOSED event stamped exactly at
+  `started_at` and is never toggled, so it's distinguishable: initial = its stored status if
+  it has a start-closure event, else Available.
+- [backend/api/serializers/simulation_runway_detail_dto.py](backend/api/serializers/simulation_runway_detail_dto.py)
+  — added the `initial_operational_status` field.
+
+**Frontend changes**
+- [frontend/src/types/metrics.ts](frontend/src/types/metrics.ts) — `SimulationDetail.randomSeed`
+  and `RunwayStat.initialOperationalStatus`.
+- [frontend/src/components/MetricsSimVariables.tsx](frontend/src/components/MetricsSimVariables.tsx)
+  — shows "Random Seed" (the number, or "Random" when null).
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) — added
+  `detailToRerunRequest(detail)`: rebuilds a create request from the run's config with the
+  fixed seed and each runway's *initial* status; name gets a " (re-run)" suffix (kept ≤120).
+- [frontend/src/components/MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx) —
+  a "Re-run" button in the completed-detail header (shown only when `randomSeed != null`)
+  POSTs the reconstructed config and navigates to the new run's detail page.
+
+**Verification**
+- [seed_reproducibility_test.py](backend/tests/simulation/seed_reproducibility_test.py):
+  added `test_same_seed_reproduces_identical_closures` — same seed + closures now reproduces
+  identical aircraft outcomes *and* the closure timeline (this test failed before the wrapper
+  fix, passes after).
+- [simulation_detail_test.py](backend/tests/feature/simulation_detail_test.py): detail
+  exposes `randomSeed`; `initialOperationalStatus` ignores a trailing run closure (reports
+  Available) and reports a start closure's configured status.
+- [simulation_rerun_test.py](backend/tests/feature/simulation_rerun_test.py): full API loop —
+  create+run (closures on, one runway started SnowClearance, fixed seed) → read detail →
+  rebuild config from the detail (mirroring `detailToRerunRequest`) → re-run → **identical
+  outcomeCounts / successRate / closureEventCount**. This is the slice's "metrics identical"
+  test, server-side.
+- **Full suite: 106 passed** (was 99 after 3.1; +7). Frontend `tsc -b` + full `eslint src` clean.
+
+**Notes**
+- The engine fix means the **dramatiq worker must be restarted** to serve the corrected
+  closure behaviour; the detail-DTO change needs a web-server restart. Not activated here —
+  no airport web server was running, and a stray old `rundramatiq` wrapper is still up on
+  pre-fix code (the CLAUDE.md footgun). Verified via pytest against the current code instead.
+- Re-run is offered only when the source run has a fixed seed (otherwise "same seed" is
+  meaningless); a generic seedless clone is Slice 2.3.
+
 ## 2026-07-28 — Slice 3.1 — Accept an optional seed on create
 
 **Slice:** 3.1 — Accept an optional seed on create (Epic 3, Reproducibility)

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from api.models import Simulation, SimulationRunwayEvent
+from api.models import Simulation, SimulationRunway, SimulationRunwayEvent
 from api.serializers.simulation_runway_detail_dto import SimulationRunwayDetailDto
 
 
@@ -27,6 +27,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
             "max_wait_minutes",
             "aircraft_speed_knots",
             "include_closures",
+            "random_seed",
             "started_at",
             "completed_at",
             "created_at",
@@ -203,6 +204,26 @@ class SimulationDetailDto(serializers.ModelSerializer):
 
         return max(0.0, duration_minutes - closed_minutes)
 
+    @staticmethod
+    def _initial_operational_status(simulation_runway, started_at):
+        # The runway's operational status *as configured at creation* — the
+        # value needed to reproduce/clone the run. `operational_status` on the
+        # row is mutated at runtime by random closures (closures.py), so a
+        # runway that started Available but ended in a trailing (never-reopened)
+        # closure would otherwise read back as closed. A runway that started
+        # closed gets a CLOSED event stamped exactly at `started_at` and is
+        # never toggled by a closure process, so its stored status stays the
+        # initial one; everything else started Available.
+        available = SimulationRunway.OperationalStatus.AVAILABLE
+        if started_at is None:
+            return simulation_runway.operational_status
+        started_closed = any(
+            event.event_type == SimulationRunwayEvent.EventType.CLOSED
+            and event.occurred_at == started_at
+            for event in simulation_runway.closure_events.all()
+        )
+        return simulation_runway.operational_status if started_closed else available
+
     def get_runway_stats(self, obj):
         # Uses the prefetched relations from SimulationQuerySet.with_detail(),
         # so this is Python-side aggregation, not extra queries.
@@ -225,6 +246,9 @@ class SimulationDetailDto(serializers.ModelSerializer):
                     "identifier": simulation_runway.runway.identifier,
                     "operating_mode": simulation_runway.operating_mode,
                     "operational_status": simulation_runway.operational_status,
+                    "initial_operational_status": self._initial_operational_status(
+                        simulation_runway, obj.started_at
+                    ),
                     "total_assigned": len(assigned),
                     "success_count": len(success),
                     "closure_count": len(simulation_runway.closure_events.all()),

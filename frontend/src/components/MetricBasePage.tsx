@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
-import { useGet, usePollWhile } from '../functions/axios';
+import { useGet, usePollWhile, usePost } from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
 import { isDetailComplete } from '../types/metrics';
 import type { SimulationDetailResponse } from '../types/metrics';
+import type { CreateSimulationRequest, Simulation } from '../types/simulation';
+import { detailToRerunRequest } from '../schemas/simulationForm';
 import type { MovementType } from '../types/visualisation';
 import MetricsRunwayInfo from './MetricsRunwayInfo';
 import MetricsSimVariables from './MetricsSimVariables';
@@ -33,6 +35,21 @@ export default function MetricBasePage() {
     id ? `/api/simulations/${id}/detail/` : null,
   );
   const [movementType, setMovementType] = useState<MovementType>('Arrival');
+  const { execute: createRerun, loading: rerunning } = usePost<
+    Simulation,
+    CreateSimulationRequest
+  >('/api/simulations/');
+
+  // Clone this run's config *with its fixed seed* and navigate to the new run.
+  const rerunWithSameSeed = async () => {
+    if (!data || !isDetailComplete(data)) {
+      return;
+    }
+    const created = await createRerun(detailToRerunRequest(data));
+    if (created) {
+      navigate(`/simulation/${created.id}/detail`);
+    }
+  };
 
   // Keep polling while the run is still in flight; stop once it completes or
   // errors (both terminal). `isDetailComplete` narrows to the Complete shape,
@@ -153,6 +170,17 @@ export default function MetricBasePage() {
             <span className="flex-1 text-center text-lg font-bold text-black">
               {data.name} - {formatDateTime(data.completedAt)}
             </span>
+            {data.randomSeed != null && (
+              <Button
+                icon="pi pi-replay"
+                label="Re-run"
+                aria-label={`Re-run with the same seed (${data.randomSeed})`}
+                tooltip={`Re-run with the same seed (${data.randomSeed}) for an identical run`}
+                loading={rerunning}
+                onClick={rerunWithSameSeed}
+                className="!rounded-md !bg-brand-accent-active !border-brand-accent-active !text-black"
+              />
+            )}
             <Button
               icon="pi pi-eye"
               aria-label="View full replay"

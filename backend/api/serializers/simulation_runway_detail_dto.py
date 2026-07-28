@@ -9,7 +9,11 @@ class SimulationRunwayDetailDto(serializers.Serializer):
     runway_id = serializers.IntegerField()
     identifier = serializers.CharField()
     operating_mode = serializers.CharField()
+    # End-of-run status (mutated by random closures during the run).
     operational_status = serializers.CharField()
+    # Status as configured at creation — use this (not operational_status) to
+    # reproduce/clone the run's starting conditions.
+    initial_operational_status = serializers.CharField()
     total_assigned = serializers.IntegerField()
     success_count = serializers.IntegerField()
     closure_count = serializers.IntegerField()

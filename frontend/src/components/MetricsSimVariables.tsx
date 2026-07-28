@@ -15,6 +15,7 @@ export default function MetricsSimVariables({ detail, className }: MetricsSimVar
     { label: 'Maximum Wait Time', value: `${detail.maxWaitMinutes} mins` },
     { label: 'Aircraft Speed', value: `${detail.aircraftSpeedKnots} kts` },
     { label: 'Closures Included?', value: detail.includeClosures ? 'Yes' : 'No' },
+    { label: 'Random Seed', value: detail.randomSeed != null ? String(detail.randomSeed) : 'Random' },
   ];
 
   return (

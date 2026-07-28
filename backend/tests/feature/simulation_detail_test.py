@@ -257,6 +257,78 @@ class SimulationDetailTest(BaseFeatureTest):
         self.assertAlmostEqual(stats[rw_window.id]["openMinutes"], 50, delta=0.01)
         self.assertAlmostEqual(stats[rw_trailing.id]["openMinutes"], 50, delta=0.01)
 
+    def test_detail_exposes_random_seed(self):
+        simulation = self.create_simulations(
+            1, status=Simulation.Status.COMPLETE, random_seed=4242
+        )
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["randomSeed"], 4242)
+
+    def test_detail_random_seed_null_when_unset(self):
+        simulation = self.create_simulations(1, status=Simulation.Status.COMPLETE)
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.json()["randomSeed"])
+
+    def test_initial_operational_status_ignores_trailing_run_closure(self):
+        # A runway that started Available but was left closed by a trailing
+        # (never-reopened) run closure must still report Available as its
+        # *initial* status, so a re-run reproduces the original start config.
+        started_at = timezone.now()
+        simulation = self.create_simulations(
+            1, status=Simulation.Status.COMPLETE, started_at=started_at
+        )
+        runway = self.create_runways(1)[0]
+        sr = self.create_simulation_runway(
+            simulation=simulation,
+            runway=runway,
+            operational_status=SimulationRunway.OperationalStatus.EQUIPMENT_FAILURE,
+        )
+        # Closure happened mid-run (offset > 0), i.e. NOT a start closure.
+        self.create_runway_event(
+            simulation_runway=sr,
+            event_type=SimulationRunwayEvent.EventType.CLOSED,
+            occurred_at=started_at + timezone.timedelta(minutes=20),
+        )
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        stat = response.json()["runwayStats"][0]
+        self.assertEqual(stat["operationalStatus"], "EquipmentFailure")
+        self.assertEqual(stat["initialOperationalStatus"], "Available")
+
+    def test_initial_operational_status_reports_start_closure(self):
+        # A runway closed at the start (CLOSED event stamped at started_at) is
+        # reported with its configured closed status as the initial status.
+        started_at = timezone.now()
+        simulation = self.create_simulations(
+            1, status=Simulation.Status.COMPLETE, started_at=started_at
+        )
+        runway = self.create_runways(1)[0]
+        sr = self.create_simulation_runway(
+            simulation=simulation,
+            runway=runway,
+            operational_status=SimulationRunway.OperationalStatus.SNOW_CLEARANCE,
+        )
+        self.create_runway_event(
+            simulation_runway=sr,
+            event_type=SimulationRunwayEvent.EventType.CLOSED,
+            occurred_at=started_at,
+            reason="Snow clearance at simulation start",
+        )
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        stat = response.json()["runwayStats"][0]
+        self.assertEqual(stat["initialOperationalStatus"], "SnowClearance")
+
     def test_detail_404_for_unknown_simulation(self):
         response = self.client.get(reverse("simulation-detail", kwargs={"pk": 999999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

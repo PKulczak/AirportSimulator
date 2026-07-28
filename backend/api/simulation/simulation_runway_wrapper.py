@@ -13,7 +13,12 @@ class SimulationRunwayWrapper:
         self.simulation_runway = simulation_runway
         self.resource = simpy.PriorityResource(env, capacity=1)
         self.closed = False
-        self._queued_processes = set()
+        # An *insertion-ordered* set of queued processes (dict-as-ordered-set):
+        # a plain `set` iterates process objects in id()/hash order, which
+        # varies between runs, so `close()` would interrupt queued aircraft in a
+        # nondeterministic order — changing which one re-wins the runway and
+        # silently breaking same-seed reproducibility for closure-enabled runs.
+        self._queued_processes = {}
         # Replaced with a fresh, unfired event every time the runway reopens,
         # so a process waiting on "notify me when this runway next reopens"
         # can just yield this and re-check the world afterwards.
@@ -36,10 +41,10 @@ class SimulationRunwayWrapper:
     def register_waiting(self, process):
         """Track a process that is currently queued (not yet holding the
         resource) for this runway, so `close()` can interrupt it."""
-        self._queued_processes.add(process)
+        self._queued_processes[process] = None
 
     def unregister_waiting(self, process):
-        self._queued_processes.discard(process)
+        self._queued_processes.pop(process, None)
 
     def close(self):
         """Mark the runway closed and interrupt every process still queued for
