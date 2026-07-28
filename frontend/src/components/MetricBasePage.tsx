@@ -75,29 +75,51 @@ export default function MetricBasePage() {
   if (!isDetailComplete(data)) {
     const isError = data.status === 'Error';
     return (
-      <div className="rounded-lg border border-slate-200 bg-brand-bg p-4 flex flex-col gap-4">
-        {backButton}
-        <h1 className="text-2xl font-semibold text-slate-800">{data.name}</h1>
-        <Message
-          severity={isError ? 'error' : 'info'}
-          text={
-            isError
-              ? `Simulation failed: ${data.errorMessage ?? 'Unknown error'}`
-              : `Simulation is ${data.status.toLowerCase()}. Metrics will appear once it completes.`
-          }
-        />
-        {!isError && (
-          <p className="text-sm text-slate-500">
-            This page refreshes automatically — metrics will appear as soon as the
-            simulation completes.
-          </p>
-        )}
-        <Button
-          label={isError ? 'Retry' : 'Refresh now'}
-          icon="pi pi-refresh"
-          onClick={() => refetch()}
-          className="self-start"
-        />
+      <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
+        <div
+          className="relative flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-4 sm:p-10 flex items-center justify-center"
+          style={{
+            backgroundImage: `url(${backgroundImage})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          }}
+        >
+          <div
+            className="queue-scroll relative flex min-w-[800px] flex-col gap-4 overflow-y-auto rounded-lg border-2 border-black bg-white p-4 shadow-2xl sm:p-6"
+            style={{ width: '100%', maxWidth: '1600px', maxHeight: '100%', aspectRatio: '1.5' }}
+          >
+            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+              {backButton}
+              <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
+                Airport Simulation
+              </h1>
+              <span aria-hidden className="w-10" />
+            </div>
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+              <h2 className="text-2xl font-semibold text-slate-800">{data.name}</h2>
+              <Message
+                severity={isError ? 'error' : 'info'}
+                text={
+                  isError
+                    ? `Simulation failed: ${data.errorMessage ?? 'Unknown error'}`
+                    : `Simulation is ${data.status.toLowerCase()}. Metrics will appear once it completes.`
+                }
+              />
+              {!isError && (
+                <p className="text-sm text-slate-500">
+                  This page refreshes automatically — metrics will appear as soon as the
+                  simulation completes.
+                </p>
+              )}
+              <Button
+                label={isError ? 'Retry' : 'Refresh now'}
+                icon="pi pi-refresh"
+                onClick={() => refetch()}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

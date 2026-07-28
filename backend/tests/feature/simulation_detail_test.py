@@ -214,6 +214,49 @@ class SimulationDetailTest(BaseFeatureTest):
         self.assertEqual(body["queueDepthStats"]["arrival"], 2)
         self.assertEqual(body["queueDepthStats"]["departure"], 3)
 
+    def test_runway_open_minutes_reflects_closures(self):
+        started_at = timezone.now()
+        simulation = self.create_simulations(
+            1,
+            status=Simulation.Status.COMPLETE,
+            started_at=started_at,
+            duration_minutes=60,
+        )
+        rw_open, rw_window, rw_trailing = self.create_runways(3)
+        sr_open = self.create_simulation_runway(simulation=simulation, runway=rw_open)
+        sr_window = self.create_simulation_runway(simulation=simulation, runway=rw_window)
+        sr_trailing = self.create_simulation_runway(
+            simulation=simulation, runway=rw_trailing
+        )
+
+        # rw_window: closed 8 -> 18 (10 minutes down) -> 50 open.
+        self.create_runway_event(
+            simulation_runway=sr_window,
+            event_type=SimulationRunwayEvent.EventType.CLOSED,
+            occurred_at=started_at + timezone.timedelta(minutes=8),
+        )
+        self.create_runway_event(
+            simulation_runway=sr_window,
+            event_type=SimulationRunwayEvent.EventType.REOPENED,
+            occurred_at=started_at + timezone.timedelta(minutes=18),
+        )
+        # rw_trailing: closed at 50 and never reopened -> down 50..60 -> 50 open.
+        self.create_runway_event(
+            simulation_runway=sr_trailing,
+            event_type=SimulationRunwayEvent.EventType.CLOSED,
+            occurred_at=started_at + timezone.timedelta(minutes=50),
+        )
+
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        stats = {rs["runwayId"]: rs for rs in response.json()["runwayStats"]}
+        self.assertAlmostEqual(stats[rw_open.id]["openMinutes"], 60, delta=0.01)
+        self.assertAlmostEqual(stats[rw_window.id]["openMinutes"], 50, delta=0.01)
+        self.assertAlmostEqual(stats[rw_trailing.id]["openMinutes"], 50, delta=0.01)
+
     def test_detail_404_for_unknown_simulation(self):
         response = self.client.get(reverse("simulation-detail", kwargs={"pk": 999999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

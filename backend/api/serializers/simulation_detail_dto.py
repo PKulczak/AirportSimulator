@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from api.models import Simulation
+from api.models import Simulation, SimulationRunwayEvent
 from api.serializers.simulation_runway_detail_dto import SimulationRunwayDetailDto
 
 
@@ -170,6 +170,39 @@ class SimulationDetailDto(serializers.ModelSerializer):
         events.sort(key=lambda event: event["time_minutes"])
         return events
 
+    @staticmethod
+    def _open_minutes(simulation_runway, started_at, duration_minutes):
+        # Minutes the runway was open within the simulation's [0, duration]
+        # window. Closures are Closed/Reopened event pairs; a trailing Closed
+        # with no Reopened means it stayed down to the end. Each interval is
+        # clamped to the window so a closure in the post-duration engine tail
+        # doesn't count against uptime. With no start reference (e.g. a test
+        # fixture that never set started_at) we can't place the events, so we
+        # report the runway as fully open — matching get_timeline_events, which
+        # also degrades gracefully when started_at is None.
+        if started_at is None or not duration_minutes:
+            return float(duration_minutes or 0)
+
+        events = sorted(
+            simulation_runway.closure_events.all(),
+            key=lambda event: event.occurred_at,
+        )
+        closed_minutes = 0.0
+        close_start = None
+        for event in events:
+            offset = (event.occurred_at - started_at).total_seconds() / 60.0
+            offset = min(max(offset, 0.0), duration_minutes)
+            if event.event_type == SimulationRunwayEvent.EventType.CLOSED:
+                if close_start is None:
+                    close_start = offset
+            elif close_start is not None:
+                closed_minutes += offset - close_start
+                close_start = None
+        if close_start is not None:
+            closed_minutes += duration_minutes - close_start
+
+        return max(0.0, duration_minutes - closed_minutes)
+
     def get_runway_stats(self, obj):
         # Uses the prefetched relations from SimulationQuerySet.with_detail(),
         # so this is Python-side aggregation, not extra queries.
@@ -195,6 +228,9 @@ class SimulationDetailDto(serializers.ModelSerializer):
                     "total_assigned": len(assigned),
                     "success_count": len(success),
                     "closure_count": len(simulation_runway.closure_events.all()),
+                    "open_minutes": self._open_minutes(
+                        simulation_runway, obj.started_at, obj.duration_minutes
+                    ),
                 }
             )
         return SimulationRunwayDetailDto(stats, many=True).data

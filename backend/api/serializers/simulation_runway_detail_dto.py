@@ -13,3 +13,7 @@ class SimulationRunwayDetailDto(serializers.Serializer):
     total_assigned = serializers.IntegerField()
     success_count = serializers.IntegerField()
     closure_count = serializers.IntegerField()
+    # Minutes the runway was open (not closed) within the simulation's
+    # configured [0, duration] window; the frontend shows this over the
+    # duration as an "open time" percentage.
+    open_minutes = serializers.FloatField()

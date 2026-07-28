@@ -26,6 +26,86 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-28 — Runway Info: dot colour by open-time + closure-reason icons
+
+**Slice:** n/a (ad-hoc UI request)
+**Status:** Done
+
+**Changes**
+- [frontend/src/components/MetricsRunwayInfo.tsx](frontend/src/components/MetricsRunwayInfo.tsx)
+  - Status dot colour now keyed off the open-time %: `0%` → red, `100%` → green,
+    anything in between → yellow (`dotColorFor`; gray fallback if % is unavailable).
+    Dot tooltip describes the open state.
+  - Icon: a fully-closed runway (0% open) shows *why* it's down instead of its operating
+    mode — Runway Inspection → magnifying glass, Snow Clearance → snowflake, Equipment
+    Failure → screwdriver-wrench (`CLOSURE_REASON_ICON`, keyed off `operationalStatus`);
+    open runways keep the arrival/departure/mixed icon. Icon tooltip names the reason.
+
+**Verification**
+- Confirmed the three Font Awesome icon names exist in the installed package before import.
+- `tsc -b` + `eslint` clean.
+- Live screenshots: a sim with one Available runway + one of each closed reason showed
+  100%→green+mixed, and 0%→red with magnifying-glass / snowflake / screwdriver-wrench
+  respectively; a separate 85% runway showed yellow+mixed.
+
+**Notes**
+- Frontend-only; Vite HMR applied it. Backend already supplies `openMinutes` +
+  `operationalStatus`.
+
+## 2026-07-28 — Runway Info: percentage = open time / simulation duration
+
+**Slice:** n/a (ad-hoc request)
+**Status:** Done
+
+**Changes**
+- [backend/api/serializers/simulation_detail_dto.py](backend/api/serializers/simulation_detail_dto.py)
+  — added `_open_minutes()`: duration minus the sum of closed intervals, derived by pairing
+  `Closed`/`Reopened` events (a trailing `Closed` with no reopen counts to the end), each
+  interval clamped to the `[0, duration]` window so post-duration engine-tail closures don't
+  count; degrades to fully-open when `started_at` is missing. Exposed via
+  [simulation_runway_detail_dto.py](backend/api/serializers/simulation_runway_detail_dto.py)
+  as `open_minutes`.
+- [frontend/src/types/metrics.ts](frontend/src/types/metrics.ts) — `RunwayStat.openMinutes`.
+- [frontend/src/components/MetricsRunwayInfo.tsx](frontend/src/components/MetricsRunwayInfo.tsx)
+  — replaced the per-runway *success rate* with `round(openMinutes / durationMinutes × 100)`.
+
+**Verification**
+- New test `test_runway_open_minutes_reflects_closures` (no-closures=100%, a closed window,
+  a trailing never-reopened closure); **full suite 94 passed**. Frontend `tsc`/`eslint` clean.
+- Live: a run with closures returned 85% (available, 22 closures) and 0% (started under
+  SnowClearance) — confirmed in the API response and the rendered UI (screenshot).
+
+**Notes**
+- Web-layer (serializer) change → restarted **hypercorn** only (it serves the changed
+  serializer and has no autoreload). The dramatiq worker never serialises detail responses,
+  so it was intentionally left running.
+
+## 2026-07-28 — Themed the Pending/Running/Error status screens
+
+**Slice:** n/a (ad-hoc UI request)
+**Status:** Done
+
+**Changes**
+- [frontend/src/components/MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx)
+  and [frontend/src/components/SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx)
+  — the not-complete (Pending/Running/Error) branches now use the same shell as every other
+  screen: full-bleed background image + bordered white card (matching `LoadingScreen` and the
+  completed pages), with the "Airport Simulation" title, a back button, and the status
+  message/refresh button centred. Added a back button to the visualisation not-complete state
+  (it previously had none).
+
+**Verification**
+- `tsc -b` + `eslint` clean; headless screenshot confirmed the themed white-card-over-
+  background render for a Running sim.
+- A follow-up report that it "still looked off" was diagnosed as a **stale browser bundle**,
+  not a code issue: proved `:3000` serves the themed code (screenshot + the vite-served module
+  contains the new markup), and there's no service worker or stale `dist/` — so a hard refresh
+  / incognito load resolves it.
+
+**Notes**
+- Frontend-only; Vite HMR applied it. The rare network "failed to load" error branch was left
+  un-themed (out of scope of the request).
+
 ## 2026-07-28 — Slice 1.4 activated in the dev environment
 
 **Status:** Done — live push now active in dev.

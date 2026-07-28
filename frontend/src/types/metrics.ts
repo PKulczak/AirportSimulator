@@ -37,6 +37,8 @@ export interface RunwayStat {
   totalAssigned: number;
   successCount: number;
   closureCount: number;
+  /** Minutes the runway was open (not closed) within the simulation duration. */
+  openMinutes: number;
 }
 
 export type TimelineEventType = 'Diverted' | 'Cancelled' | 'Closed' | 'Reopened';
