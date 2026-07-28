@@ -11,6 +11,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowsRotate,
   faChevronRight,
+  faCopy,
   faPen,
   faPlaneArrival,
   faPlaneDeparture,
@@ -25,11 +26,13 @@ import {
 } from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
 import {
+  configToFormValues,
   SIMULATION_NAME_MAX,
   validateSimulationName,
+  type SimulationFormValues,
 } from '../schemas/simulationForm';
 import type { Page } from '../types/common';
-import type { Simulation, SimulationStatus } from '../types/simulation';
+import type { Simulation, SimulationConfig, SimulationStatus } from '../types/simulation';
 import SimulationFormDialog from './SimulationFormDialog';
 import backgroundImage from '../assets/Background.png';
 
@@ -61,6 +64,9 @@ export default function SimulationHistory() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [dialogVisible, setDialogVisible] = useState(false);
+  const [formInitialValues, setFormInitialValues] = useState<SimulationFormValues | undefined>();
+  const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Simulation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -164,6 +170,28 @@ export default function SimulationHistory() {
     }
   };
 
+  const openCreate = () => {
+    setDuplicateError(null);
+    setFormInitialValues(undefined);
+    setDialogVisible(true);
+  };
+
+  const openDuplicate = async (simulation: Simulation) => {
+    setDuplicateError(null);
+    setDuplicatingId(simulation.id);
+    try {
+      const { data } = await apiClient.get<SimulationConfig>(
+        `/api/simulations/${simulation.id}/config/`,
+      );
+      setFormInitialValues(configToFormValues(data));
+      setDialogVisible(true);
+    } catch {
+      setDuplicateError('Failed to load that run’s configuration. Please try again.');
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
   return (
     <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
       <div
@@ -193,12 +221,13 @@ export default function SimulationHistory() {
             />
             <Button
               label="Create"
-              onClick={() => setDialogVisible(true)}
+              onClick={openCreate}
               className="justify-self-end !border-brand-accent-active !bg-brand-accent-active font-bold !text-white"
             />
           </div>
 
           {error && <p className="text-red-600">Failed to load simulations: {error.message}</p>}
+          {duplicateError && <Message severity="error" text={duplicateError} className="w-full" />}
 
           <DataTable
             value={data?.results ?? []}
@@ -310,6 +339,18 @@ export default function SimulationHistory() {
               body={(row: Simulation) => (
                 <span className="inline-flex items-center">
                   <Button
+                    icon={<FontAwesomeIcon icon={faCopy} />}
+                    text
+                    loading={duplicatingId === row.id}
+                    aria-label={`Duplicate ${row.name}`}
+                    tooltip="Duplicate"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openDuplicate(row);
+                    }}
+                    className="!border-transparent !bg-transparent !text-slate-500 !text-base"
+                  />
+                  <Button
                     icon={<FontAwesomeIcon icon={faPen} />}
                     text
                     aria-label={`Rename ${row.name}`}
@@ -339,7 +380,11 @@ export default function SimulationHistory() {
 
       <SimulationFormDialog
         visible={dialogVisible}
-        onHide={() => setDialogVisible(false)}
+        initialValues={formInitialValues}
+        onHide={() => {
+          setDialogVisible(false);
+          setFormInitialValues(undefined);
+        }}
         onCreated={() => refetch()}
       />
 

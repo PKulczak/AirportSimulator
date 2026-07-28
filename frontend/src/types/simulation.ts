@@ -18,6 +18,21 @@ export interface Simulation {
   runwayCount: number;
 }
 
+/** GET /api/simulations/{id}/config/ — a run's full creation config, shaped to
+ * round-trip straight back into a CreateSimulationRequest (the Duplicate flow). */
+export interface SimulationConfig {
+  id: number;
+  name: string;
+  arrivalRatePerHour: number;
+  departureRatePerHour: number;
+  durationMinutes: number;
+  maxWaitMinutes: number;
+  aircraftSpeedKnots: number;
+  includeClosures: boolean;
+  randomSeed: number | null;
+  runways: SimulationRunwayConfig[];
+}
+
 /** POST /api/simulations/ request body. */
 export interface CreateSimulationRequest {
   name: string;

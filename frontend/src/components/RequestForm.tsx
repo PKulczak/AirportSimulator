@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { InputText } from 'primereact/inputtext';
@@ -42,9 +43,11 @@ const REQUIRED_MARK = <span className="text-red-600">*</span>;
 
 interface RequestFormProps {
   onCreated: (simulation: Simulation) => void;
+  /** Pre-fill the form (the Duplicate flow); omit for a blank create form. */
+  initialValues?: SimulationFormValues;
 }
 
-export default function RequestForm({ onCreated }: RequestFormProps) {
+export default function RequestForm({ onCreated, initialValues }: RequestFormProps) {
   const { runways, loading: runwaysLoading } = useRunways();
   const { execute, loading: submitting, error: submitError } = usePost<
     Simulation,
@@ -56,11 +59,19 @@ export default function RequestForm({ onCreated }: RequestFormProps) {
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors },
   } = useForm<SimulationFormValues>({
     resolver: zodResolver(simulationFormSchema),
-    defaultValues: defaultSimulationFormValues,
+    defaultValues: initialValues ?? defaultSimulationFormValues,
   });
+
+  // Re-seed the form when the caller swaps in new initial values (e.g. opening
+  // Duplicate for a different run without remounting the form).
+  useEffect(() => {
+    reset(initialValues ?? defaultSimulationFormValues);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialValues]);
 
   const selectedRunwayIds = watch('runwayIds');
   const runwayModes = watch('runwayModes');

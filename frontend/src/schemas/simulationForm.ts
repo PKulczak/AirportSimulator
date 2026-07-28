@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CreateSimulationRequest } from '../types/simulation';
+import type { CreateSimulationRequest, SimulationConfig } from '../types/simulation';
 import type { SimulationDetail } from '../types/metrics';
 import type { OperatingMode, OperationalStatus } from '../types/runway';
 
@@ -164,6 +164,31 @@ export const defaultSimulationFormValues: SimulationFormValues = {
   runwayModes: {},
   runwayInitialStatus: {},
 };
+
+/** Maps a fetched run config into create-form values, for the Duplicate flow.
+ * Pre-fills identically (name, seed, and each runway's initial mode/status) so
+ * the user can tweak and re-submit. `aircraftSpeedKnots` isn't a form field
+ * (the form defers to the server default), so it's intentionally dropped. */
+export function configToFormValues(config: SimulationConfig): SimulationFormValues {
+  const runwayModes: Record<string, OperatingMode> = {};
+  const runwayInitialStatus: Record<string, OperationalStatus> = {};
+  for (const runway of config.runways) {
+    runwayModes[String(runway.runwayId)] = runway.operatingMode;
+    runwayInitialStatus[String(runway.runwayId)] = runway.operationalStatus ?? 'Available';
+  }
+  return {
+    name: config.name,
+    arrivalRate: config.arrivalRatePerHour,
+    departureRate: config.departureRatePerHour,
+    durationMinutes: config.durationMinutes,
+    maxWaitMinutes: config.maxWaitMinutes,
+    includeClosures: config.includeClosures,
+    randomSeed: config.randomSeed,
+    runwayIds: config.runways.map((runway) => runway.runwayId),
+    runwayModes,
+    runwayInitialStatus,
+  };
+}
 
 export function toCreateSimulationRequest(
   values: SimulationFormValues,

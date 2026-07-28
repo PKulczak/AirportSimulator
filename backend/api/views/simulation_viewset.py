@@ -5,6 +5,7 @@ from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
 from api.models import Simulation
+from api.serializers.simulation_config_dto import SimulationConfigDto
 from api.serializers.simulation_creation_dto import SimulationCreationDto
 from api.serializers.simulation_detail_dto import SimulationDetailDto
 from api.serializers.simulation_list_dto import SimulationListDto
@@ -57,6 +58,14 @@ class SimulationViewset(
         simulation = get_object_or_404(Simulation.objects.with_detail(), pk=pk)
         serializer = SimulationDetailDto(simulation)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["get"])
+    def config(self, request, pk=None):
+        simulation = get_object_or_404(
+            Simulation.objects.prefetch_related("simulation_runways__closure_events"),
+            pk=pk,
+        )
+        return Response(SimulationConfigDto(simulation).data)
 
     @action(detail=True, methods=["get"])
     def visualisation(self, request, pk=None):

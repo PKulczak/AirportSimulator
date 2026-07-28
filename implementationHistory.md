@@ -26,6 +26,55 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-28 — Slice 2.3 — Clone config into a new run
+
+**Slice:** 2.3 — Clone config into a new run (Epic 2, Simulation management)
+**Status:** Done (code + tests + live-verified)
+
+**Backend changes**
+- [backend/api/serializers/runway_initial_status.py](backend/api/serializers/runway_initial_status.py)
+  (new) — extracted the "initial (as-configured) operational status" logic (previously a
+  private method on the detail DTO) into a shared `initial_operational_status()` helper.
+- [backend/api/serializers/simulation_detail_dto.py](backend/api/serializers/simulation_detail_dto.py)
+  — now calls the shared helper (behaviour unchanged; detail tests still green).
+- [backend/api/serializers/simulation_config_dto.py](backend/api/serializers/simulation_config_dto.py)
+  (new) — `SimulationConfigDto`, shaped to match `SimulationCreationDto` input: rates,
+  duration, max-wait, aircraft speed, closures, seed, and `runways` (each with `runwayId`,
+  `operatingMode`, and the *initial* `operationalStatus`) — so its output round-trips
+  straight back into create.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) — added
+  `GET /api/simulations/{id}/config/` (prefetches `simulation_runways__closure_events`).
+
+**Frontend changes**
+- [frontend/src/types/simulation.ts](frontend/src/types/simulation.ts) — `SimulationConfig` type.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) — added
+  `configToFormValues()` (maps a fetched config to create-form values; drops `aircraftSpeedKnots`,
+  which isn't a form field — the form defers to the server default).
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — accepts an
+  optional `initialValues` prop and `reset()`s when it changes.
+- [frontend/src/components/SimulationFormDialog.tsx](frontend/src/components/SimulationFormDialog.tsx)
+  — passes `initialValues` through; header is "Duplicate Simulation" when pre-filled, else "Create
+  Simulation".
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx) — a
+  copy button per row fetches `/config`, pre-fills the dialog, and opens it for the user to tweak &
+  submit (creating a new run). Right-column actions are now [duplicate · rename · view]; the
+  Create button opens a blank form. Fetch errors surface as a `Message`.
+
+**Verification**
+- [simulation_config_test.py](backend/tests/feature/simulation_config_test.py) (4 tests): config
+  exposes all create fields; **config output re-POSTs into an identical run** (the round-trip
+  guarantee); reports initial status, not an end-of-run trailing closure; unknown id → 404.
+  **Full suite: 123 passed** (+4). Frontend `tsc -b` + `eslint` clean.
+- Restarted **hypercorn** (new endpoint, no autoreload); verified live: created a run with
+  closures + a started-closed runway + seed, `GET /config` returned the full config, re-POSTed it
+  verbatim → a new run with an identical config. Both test runs deleted by explicit id.
+
+**Notes**
+- Composes with Slice 3.2: the config includes `randomSeed`, so a duplicate pre-fills the seed too
+  (the user can clear it in the form for fresh randomness).
+- A form-based duplicate can't reproduce a non-default `aircraftSpeedKnots` (the create form has no
+  speed field); the config *DTO* does round-trip it, so an API-level clone preserves it.
+
 ## 2026-07-28 — Slice 2.2 — Rename a simulation
 
 **Slice:** 2.2 — Rename a simulation (Epic 2, Simulation management)
