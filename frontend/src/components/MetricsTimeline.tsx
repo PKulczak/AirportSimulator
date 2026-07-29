@@ -5,9 +5,9 @@ import type { SimulationDetail, TimelineEvent } from '../types/metrics';
  * simulation end up with a similarly readable number of bars. */
 const TARGET_BUCKET_COUNT = 100;
 
-/** Widest a closure/reopening line ever gets, however many land in the same
- * bucket — keeps one extreme bucket from dwarfing every other bar. */
-const MAX_EVENT_LINE_PX = 10;
+/** Fixed width for a closure/reopening line, regardless of how many land in
+ * the same bucket. */
+const EVENT_LINE_PX = 4;
 
 interface Bucket {
   startMinutes: number;
@@ -63,19 +63,16 @@ function bucketTooltip(bucket: Bucket): string {
 }
 
 /** Summary chart: cancellations/diversions per time bucket as bar height,
- * runway closures as a red vertical line and reopenings as a green one, each
- * whose thickness scales with how many landed in that bucket — bolder means
- * more at once. Deliberately not the animated replay — a quick "when did
- * things go wrong" overview at a glance, with the full detail (queues,
- * runway occupancy) still one click away via replay. Kept flat/wide (fixed
- * short height, one thin bar per bucket) rather than a tall chart, to match
- * the compact strip this replaced. */
+ * runway closures as a red vertical line and reopenings as a green one.
+ * Deliberately not the animated replay — a quick "when did things go wrong"
+ * overview at a glance, with the full detail (queues, runway occupancy)
+ * still one click away via replay. Kept flat/wide (fixed short height, one
+ * thin bar per bucket) rather than a tall chart, to match the compact strip
+ * this replaced. */
 export default function MetricsTimeline({ detail }: { detail: SimulationDetail }) {
   const { timelineEvents, durationMinutes } = detail;
   const buckets = buildBuckets(timelineEvents, durationMinutes);
   const maxRemoved = Math.max(1, ...buckets.map((b) => b.diverted + b.cancelled));
-  const maxClosures = Math.max(1, ...buckets.map((b) => b.closures));
-  const maxReopenings = Math.max(1, ...buckets.map((b) => b.reopenings));
 
   return (
     <div className="shrink-0 rounded-lg overflow-hidden border border-slate-200">
@@ -90,11 +87,11 @@ export default function MetricsTimeline({ detail }: { detail: SimulationDetail }
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-1 shrink-0 rounded-sm bg-red-600" />
-            Runway closure (bolder = more)
+            Runway closure
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-1 shrink-0 rounded-sm bg-emerald-600" />
-            Runway reopened (bolder = more)
+            Runway reopened
           </span>
         </div>
       </div>
@@ -109,17 +106,6 @@ export default function MetricsTimeline({ detail }: { detail: SimulationDetail }
             {buckets.map((bucket, index) => {
               const removed = bucket.diverted + bucket.cancelled;
               const removedHeightPct = (removed / maxRemoved) * 100;
-              const closureWidthPx =
-                bucket.closures > 0
-                  ? Math.min(MAX_EVENT_LINE_PX, 2 + (bucket.closures / maxClosures) * (MAX_EVENT_LINE_PX - 2))
-                  : 0;
-              const reopenWidthPx =
-                bucket.reopenings > 0
-                  ? Math.min(
-                      MAX_EVENT_LINE_PX,
-                      2 + (bucket.reopenings / maxReopenings) * (MAX_EVENT_LINE_PX - 2),
-                    )
-                  : 0;
               return (
                 <div
                   key={index}
@@ -132,13 +118,13 @@ export default function MetricsTimeline({ detail }: { detail: SimulationDetail }
                     // the two fully overlapping.
                     <div
                       className="absolute inset-y-0 left-[35%] -translate-x-1/2 rounded-sm bg-red-600/70"
-                      style={{ width: `${closureWidthPx}px` }}
+                      style={{ width: `${EVENT_LINE_PX}px` }}
                     />
                   )}
                   {bucket.reopenings > 0 && (
                     <div
                       className="absolute inset-y-0 left-[65%] -translate-x-1/2 rounded-sm bg-emerald-600/70"
-                      style={{ width: `${reopenWidthPx}px` }}
+                      style={{ width: `${EVENT_LINE_PX}px` }}
                     />
                   )}
                   {removed > 0 && (
