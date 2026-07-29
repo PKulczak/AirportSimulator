@@ -59,6 +59,15 @@ cd backend
 python manage.py rundramatiq
 ```
 
+#### Alternative: Docker Compose
+
+`docker compose up` from the repo root brings up Postgres, Redis, the Django web server,
+and the `dramatiq` worker together — migrations run automatically before the web server
+and worker start. This is an alternative to the manual steps above, not a supplement to
+them: both default to the same Postgres (`5432`) and Redis (`6379`) ports, so don't run
+both at once. The frontend isn't included — run it separately with `npm run dev` as below,
+pointed at `http://localhost:8000`.
+
 ### Frontend
 
 ```bash

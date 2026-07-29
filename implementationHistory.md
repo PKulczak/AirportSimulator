@@ -26,6 +26,72 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-29 — Slice 11.1 — Docker Compose for local dev
+
+**Slice:** 11.1 — Docker Compose for local dev (Epic 11, Dev-ex & reliability)
+**Status:** Done (config written and statically validated; `docker compose up` itself not
+run — see Verification)
+
+**Changes**
+- [backend/Dockerfile](backend/Dockerfile) (new) — `python:3.13-slim` (matches this repo's
+  actual dev Python, confirmed this session), installs `requirements.txt`, copies the app,
+  exposes 8000. No entrypoint script — `docker-compose.yml` sets the command per service so
+  the same image serves `web`, `worker`, and the one-shot `migrate` step.
+- [backend/.dockerignore](backend/.dockerignore) (new) — excludes `venv/`, `__pycache__/`,
+  `.env`, `db.sqlite3`, `.pytest_cache/` from the build context (mirrors
+  `backend/.gitignore`).
+- [docker-compose.yml](docker-compose.yml) (new, repo root) — `postgres` (16-alpine, named
+  volume, `pg_isready` healthcheck), `redis` (7-alpine, `redis-cli ping` healthcheck), a
+  one-shot `migrate` service (`manage.py migrate --noinput`, waits on Postgres healthy),
+  and `web`/`worker` (both wait on `migrate` completing successfully + Redis healthy, so
+  neither can start against an unmigrated DB or race each other to migrate). All four
+  backend-side services share one `environment:` block via a YAML anchor
+  (`x-backend-env`), with `DATABASE_HOST`/`QUEUE_URL`/`CHANNEL_LAYER_URL` pointed at the
+  compose service names (`postgres`/`redis`) rather than `localhost` — deliberately
+  self-contained (no `env_file: backend/.env` dependency), so `docker compose up` works on
+  a fresh clone with no `.env` file created yet, matching the manual "brings the stack up"
+  test literally. Per the slice's explicit scope ("web, dramatiq worker, Postgres, Redis"),
+  the frontend is **not** included — it still runs via `npm run dev`, pointed at the
+  dockerized backend's `localhost:8000` (already the default `CORS_ALLOWED_ORIGINS`).
+- [README.md](README.md) — added a "Docker Compose" subsection under the backend setup
+  steps, documenting it as an alternative to (not alongside) the manual `venv`/
+  `runserver`/`rundramatiq` workflow, since both default to the same Postgres/Redis ports.
+- [CLAUDE.md](CLAUDE.md) — updated the stale "no Dockerfile, docker-compose... exists"
+  infrastructure note (now false) and added the same alternative-workflow pointer after
+  the manual backend setup block.
+
+**Verification**
+- **Docker itself is not installed in this environment** (`docker`/`docker compose` not on
+  `PATH`, no Docker Desktop install found) — `docker compose up` could not be literally
+  executed, so this slice's manual test ("brings the stack up; create a run end-to-end")
+  is unexercised end-to-end. Verified what's checkable without Docker instead:
+  - `docker-compose.yml` parses as valid YAML and the `x-backend-env` anchor expands
+    identically into `migrate`/`web`/`worker`'s `environment:` blocks (checked via
+    `pyyaml`).
+  - Confirmed `django-environ`'s `Env.read_env()` (`backend/backend/settings.py`) silently
+    no-ops on a missing `.env` file (catches `OSError`, just logs) rather than raising —
+    so the container's lack of a `.env` file is safe, and `env(...)`/`env.list(...)` calls
+    read whatever `docker-compose.yml` injected via `environment:` regardless.
+  - `requirements.txt` is the same one this session already confirmed installs cleanly
+    under Python 3.13 (this repo's actual dev interpreter) — the Dockerfile installs the
+    identical file under `python:3.13-slim`; the main unverified risk is whether every
+    package (`psycopg[binary]`, `numpy`) publishes a linux/manylinux wheel for cp313 (no
+    network access in this environment to check PyPI directly).
+- Frontend unaffected by this slice; not re-verified.
+
+**Notes**
+- If a future session has Docker available, the outstanding manual step is exactly the
+  slice's own test: `docker compose up` from repo root, then create a simulation via the
+  frontend (run with `npm run dev` against `localhost:8000`) and confirm it completes.
+- Host ports 5432/6379/8000 are published for convenience (inspecting the DB/queue with a
+  local client, hitting the API directly) — documented as a conflict risk with the manual
+  workflow's own default ports, not resolved by e.g. randomizing ports, since a fixed
+  known port is more useful for local dev than avoiding a collision that's easy to avoid
+  by just not running both workflows at once.
+- CI (Slice 11.2) could reuse this same `docker-compose.yml`/`Dockerfile` to run the
+  backend test suite in a clean, reproducible environment instead of relying on whatever's
+  installed on a CI runner — left for that slice rather than pulled forward here.
+
 ## 2026-07-29 — Redesign: collapse row actions into a "..." menu; add sweep delete
 
 **Slice:** n/a (user-requested cleanup of Slice 2.1/2.2/2.3's row-actions UX, plus a new

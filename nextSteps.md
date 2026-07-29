@@ -12,7 +12,7 @@ epics are independent of each other.
   in `backend/tests/feature/`, engine unit tests in `backend/tests/simulation/`. Prefer
   adding a test per slice.
 - **Frontend** has **no test runner today** (see [CLAUDE.md](CLAUDE.md)). Until Slice
-  12.4 (add Vitest) lands, "test" for a frontend-only slice means the explicit manual
+  11.4 (add Vitest) lands, "test" for a frontend-only slice means the explicit manual
   steps listed under that slice. Slices are written so those steps are short and concrete.
 - Simulations run **async** via dramatiq and the UI does **not** poll — so any slice that
   ends in "watch the status change" depends on Epic 1, or on a manual page refresh until
@@ -158,29 +158,29 @@ Epic 4 for display building blocks.
 
 ---
 
-## Epic 7 — Export
+## Epic 6 — Export
 
-### Slice 7.1 — CSV of the per-aircraft table
+### Slice 6.1 — CSV of the per-aircraft table
 
 - **BE:** `GET /api/simulations/{id}/export.csv` streaming the aircraft rows (callsign,
   movement, outcome, wait, fuel, assigned runway).
 - **FE:** Download button on the detail page.
 - **Test:** pytest asserts header row + one line per aircraft.
 
-### Slice 7.2 — PDF / printable summary
+### Slice 6.2 — PDF / printable summary
 
 - **FE:** A print-friendly summary (metrics + key charts) or server-rendered PDF.
 - **Test (manual):** Export a run, confirm the summary matches the dashboard.
 
 ---
 
-## Epic 8 — Engine fidelity
+## Epic 7 — Engine fidelity
 
 Each slice deepens the model and is unit-testable in `backend/tests/simulation/` with a
 fixed seed. Constants live in
 [simulation/constants.py](backend/api/simulation/constants.py).
 
-### Slice 8.1 — Aircraft weight classes + wake separation
+### Slice 7.1 — Aircraft weight classes + wake separation
 
 - **ENG:** Assign Heavy/Medium/Light in `aircraft_data_generator.py`; enforce separation
   minima between successive operations instead of a flat `REFERENCE_OPERATION_MINUTES`.
@@ -188,25 +188,25 @@ fixed seed. Constants live in
 - **Test:** seeded engine test — successive operations respect the larger separation after
   a Heavy.
 
-### Slice 8.2 — Weather as a scenario parameter
+### Slice 7.2 — Weather as a scenario parameter
 
 - **ENG/BE/FE:** A weather setting (e.g. VMC/IMC, wind, snow) scales capacity/separation
   and closure probability; ties into existing `SnowClearance`/`RunwayInspection` reasons.
 - **Test:** seeded engine test — worse weather lowers throughput and raises closures.
 
-### Slice 8.3 — Time-varying demand (rush hours)
+### Slice 7.3 — Time-varying demand (rush hours)
 
 - **ENG/BE/FE:** Accept a demand profile/curve instead of a single flat rate per hour.
 - **Test:** seeded engine test — arrivals cluster in the configured peak windows.
 
-### Slice 8.4 — Expose emergency/closure rates as config
+### Slice 7.4 — Expose emergency/closure rates as config
 
 - **BE/FE:** Promote hardcoded probabilities/intervals (`MECHANICAL_FAILURE_PROBABILITY`,
   `CLOSURE_MEAN_INTERVAL_MINUTES`, …) into optional "advanced" config fields.
 - **Test:** pytest that overrides flow through to the runner; seeded engine test that a
   higher rate yields more events.
 
-### Slice 8.5 — Second resource stage: gates / taxi time
+### Slice 7.5 — Second resource stage: gates / taxi time
 
 - **ENG:** Add a gate/stand `simpy` resource — arrivals need a free stand, departures need
   pushback — turning the single-resource model into a small network.
@@ -215,9 +215,9 @@ fixed seed. Constants live in
 
 ---
 
-## Epic 9 — Scenario templates / presets
+## Epic 8 — Scenario templates / presets
 
-### Slice 9.1 — Save & reuse a named config
+### Slice 8.1 — Save & reuse a named config
 
 - **BE:** A `Template` model + endpoints (save a config, list templates).
 - **FE:** "Save as template" on the form; a template picker that pre-fills the form.
@@ -225,11 +225,11 @@ fixed seed. Constants live in
 
 ---
 
-## Epic 10 — Auth & ownership
+## Epic 9 — Auth & ownership
 
 The API is currently open (no permission classes). Do this before any multi-user use.
 
-### Slice 10.1 — Authentication
+### Slice 9.1 — Authentication
 
 - **BE:** Add auth (token/session) + a login endpoint; keep endpoints open behind a flag
   until the FE is wired.
@@ -237,16 +237,16 @@ The API is currently open (no permission classes). Do this before any multi-user
   ([functions/axios.ts](frontend/src/functions/axios.ts)).
 - **Test:** pytest that protected endpoints 401 without creds, 200 with.
 
-### Slice 10.2 — Per-user ownership
+### Slice 9.2 — Per-user ownership
 
 - **BE:** FK `owner` on `Simulation`; list/detail scoped to the owner.
 - **Test:** pytest that user A cannot see user B's runs.
 
 ---
 
-## Epic 11 — Sharing
+## Epic 10 — Sharing
 
-### Slice 11.1 — Read-only share link
+### Slice 10.1 — Read-only share link
 
 - **BE:** A shareable token that grants read-only access to one run's detail +
   visualisation.
@@ -256,28 +256,28 @@ The API is currently open (no permission classes). Do this before any multi-user
 
 ---
 
-## Epic 12 — Dev-ex & reliability
+## Epic 11 — Dev-ex & reliability
 
 Motivated directly by the stray-process incidents documented in [CLAUDE.md](CLAUDE.md).
 
-### Slice 12.1 — Docker Compose for local dev
+### Slice 11.1 — Docker Compose for local dev
 
 - **INFRA:** `docker-compose.yml` with web, dramatiq worker, Postgres, Redis so there's a
   single source of truth for "which process is running."
 - **Test (manual):** `docker compose up` brings the stack up; create a run end-to-end.
 
-### Slice 12.2 — CI pipeline
+### Slice 11.2 — CI pipeline
 
 - **INFRA:** Run `pytest` (backend) and `npm run build` + `npm run lint` (frontend) on push.
 - **Test:** the pipeline goes green on a clean checkout.
 
-### Slice 12.3 — Run heartbeat + auto-timeout
+### Slice 11.3 — Run heartbeat + auto-timeout
 
 - **BE/ENG:** A watchdog marks a run `Error` if it hasn't progressed within a timeout, so
   a dead/stray worker doesn't leave a sim `Running` forever.
 - **Test:** pytest that a stalled run transitions to `Error` after the timeout.
 
-### Slice 12.4 — Add a frontend test runner (Vitest)
+### Slice 11.4 — Add a frontend test runner (Vitest)
 
 - **INFRA/FE:** Add Vitest + Testing Library so later frontend slices get automated tests
   instead of manual steps. Backfill a couple of tests (e.g. the form schema refinements in
@@ -293,6 +293,6 @@ Motivated directly by the stray-process incidents documented in [CLAUDE.md](CLAU
 3. **Epic 2** (management) — basic hygiene (delete/rename/clone/cancel).
 4. **Epic 4 → 5** (compare → sweep) — the analysis story that makes this a real modelling
    tool.
-5. **Epic 12** in parallel — Compose/CI early pays for itself given the process-management
+5. **Epic 11** in parallel — Compose/CI early pays for itself given the process-management
    pain already recorded.
-6. **Epics 7–11** as demand dictates.
+6. **Epics 6–10** as demand dictates.

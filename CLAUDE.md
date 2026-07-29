@@ -26,6 +26,11 @@ python manage.py rundramatiq        # separate terminal; required to actually pr
 
 Requires Postgres (db `airportdb`) and Redis (used as the dramatiq broker — see `QUEUE_BROKER`/`QUEUE_URL` in `.env`). The dramatiq worker must be restarted manually to pick up code changes to `api/tasks.py` or the simulation engine.
 
+Alternatively, `docker compose up` from the repo root brings up Postgres, Redis, `runserver`,
+and the `dramatiq` worker together (migrations run automatically first) — see
+[Infrastructure notes](#infrastructure-notes) below. Pick one workflow or the other; both
+default to the same Postgres/Redis ports.
+
 Frontend:
 
 ```
@@ -174,7 +179,7 @@ Known gap: neither `MetricBasePage.tsx` nor `SimulationVisualisation.tsx` poll o
 
 ## Infrastructure notes
 
-- No Dockerfile, docker-compose, or CI/CD config exists anywhere in the repo (checked both `backend/` and `frontend/`, and repo-wide for `*.yml`/`*.yaml`/`Dockerfile*`) — there is no defined deployment pipeline yet; local dev is the only supported workflow today.
-- Backend requires Postgres (default local DB `airportdb`) and Redis (dramatiq broker) running locally; both are configured entirely through `backend/.env` (copy from `backend/.env.example`). Key vars: `SECRET_KEY`, `DATABASE_*`, `DEBUG`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `LOG_LEVEL`, `QUEUE_BROKER`, `QUEUE_URL`, `AIRCRAFT_SPEED_IN_KNOTS`.
+- No CI/CD config exists anywhere in the repo — there is no defined deployment pipeline yet. A [`docker-compose.yml`](docker-compose.yml) at the repo root brings up the **backend** side of local dev (Postgres, Redis, `runserver`/`web`, and the `dramatiq` worker, via [`backend/Dockerfile`](backend/Dockerfile)) as a single source of truth for "which process is running" — `docker compose up` migrates then starts `web`/`worker`. It deliberately does **not** include the frontend; run that with `npm run dev` as usual, pointed at the dockerized backend's `http://localhost:8000`. It's an alternative to the manual `venv`/`runserver`/`rundramatiq` workflow below, not a supplement to it — don't run both against the same Postgres/Redis ports at once (the manual workflow's default ports 5432/6379 are what the compose file also binds to the host).
+- Backend requires Postgres (default local DB `airportdb`) and Redis (dramatiq broker) running locally; both are configured entirely through `backend/.env` (copy from `backend/.env.example`) for the manual workflow, or via the `environment:` blocks in `docker-compose.yml` for the Docker workflow. Key vars: `SECRET_KEY`, `DATABASE_*`, `DEBUG`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `LOG_LEVEL`, `QUEUE_BROKER`, `QUEUE_URL`, `AIRCRAFT_SPEED_IN_KNOTS`.
 - Frontend only needs `VITE_API_BASE_URL` in `frontend/.env.local` (no `.env.example` provided for frontend, unlike backend).
 - The `rundramatiq` worker process is separate from `runserver` and must be running for any created simulation to actually execute; it also needs to be manually restarted to pick up backend code changes during development.
