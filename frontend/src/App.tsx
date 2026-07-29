@@ -3,6 +3,7 @@ import MainLayout from './components/MainLayout';
 import SimulationHistory from './components/SimulationHistory';
 import MetricBasePage from './components/MetricBasePage';
 import SimulationVisualisation from './components/SimulationVisualisation';
+import CompareRuns from './components/CompareRuns';
 import PageNotFound from './components/PageNotFound';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
           path="/simulation/:id/visualisation"
           element={<SimulationVisualisation />}
         />
+        <Route path="/compare" element={<CompareRuns />} />
         <Route path="*" element={<PageNotFound />} />
       </Route>
     </Routes>

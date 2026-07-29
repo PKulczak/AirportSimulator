@@ -12,6 +12,7 @@ import {
   faArrowsRotate,
   faBan,
   faChevronRight,
+  faCodeCompare,
   faCopy,
   faPen,
   faPlaneArrival,
@@ -84,6 +85,8 @@ export default function SimulationHistory() {
   const [renameValue, setRenameValue] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<number[]>([]);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -219,6 +222,24 @@ export default function SimulationHistory() {
     }
   };
 
+  const toggleCompareMode = () => {
+    setCompareMode((prev) => !prev);
+    setCompareIds([]);
+  };
+
+  const toggleCompareSelection = (row: Simulation) => {
+    if (row.status !== 'Complete') {
+      return;
+    }
+    setCompareIds((ids) =>
+      ids.includes(row.id) ? ids.filter((id) => id !== row.id) : [...ids, row.id],
+    );
+  };
+
+  const startCompare = () => {
+    navigate(`/compare?ids=${compareIds.join(',')}`);
+  };
+
   return (
     <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
       <div
@@ -239,7 +260,16 @@ export default function SimulationHistory() {
           </h1>
 
           <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
-            <div />
+            <Button
+              icon={<FontAwesomeIcon icon={faCodeCompare} />}
+              label={compareMode ? 'Exit compare' : 'Compare runs'}
+              onClick={toggleCompareMode}
+              className={
+                compareMode
+                  ? 'justify-self-start !border-brand-accent-active !bg-brand-accent-active font-bold !text-white'
+                  : 'justify-self-start'
+              }
+            />
             <InputText
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
@@ -252,6 +282,31 @@ export default function SimulationHistory() {
               className="justify-self-end !border-brand-accent-active !bg-brand-accent-active font-bold !text-white"
             />
           </div>
+
+          {compareMode && (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-brand-bg px-3 py-2">
+              <span className="text-sm text-slate-700">
+                {compareIds.length === 0
+                  ? 'Select 2 or more completed runs to compare.'
+                  : `${compareIds.length} selected`}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  label="Clear"
+                  text
+                  disabled={compareIds.length === 0}
+                  onClick={() => setCompareIds([])}
+                />
+                <Button
+                  label="Compare selected"
+                  icon={<FontAwesomeIcon icon={faCodeCompare} />}
+                  disabled={compareIds.length < 2}
+                  onClick={startCompare}
+                  className="!border-brand-accent-active !bg-brand-accent-active !text-white"
+                />
+              </div>
+            </div>
+          )}
 
           {error && <p className="text-red-600">Failed to load simulations: {error.message}</p>}
           {duplicateError && <Message severity="error" text={duplicateError} className="w-full" />}
@@ -267,7 +322,23 @@ export default function SimulationHistory() {
             rows={PAGE_SIZE}
             totalRecords={data?.count ?? 0}
             onPage={onPage}
-            onRowClick={(e) => navigate(`/simulation/${(e.data as Simulation).id}/detail`)}
+            onRowClick={(e) => {
+              const row = e.data as Simulation;
+              if (compareMode) {
+                toggleCompareSelection(row);
+              } else {
+                navigate(`/simulation/${row.id}/detail`);
+              }
+            }}
+            rowClassName={(row: Simulation) => {
+              if (!compareMode) {
+                return '';
+              }
+              if (row.status !== 'Complete') {
+                return 'opacity-40';
+              }
+              return compareIds.includes(row.id) ? '!bg-brand-bg' : '';
+            }}
             rowHover
             className="cursor-pointer"
             emptyMessage="No simulations yet"
