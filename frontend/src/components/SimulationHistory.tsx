@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataTable, type DataTablePageEvent } from 'primereact/datatable';
 import { Column } from 'primereact/column';
@@ -6,6 +6,7 @@ import { Tag } from 'primereact/tag';
 import { Button } from 'primereact/button';
 import { InputText } from 'primereact/inputtext';
 import { Dialog } from 'primereact/dialog';
+import { Menu } from 'primereact/menu';
 import { Message } from 'primereact/message';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -14,6 +15,7 @@ import {
   faChevronRight,
   faCodeCompare,
   faCopy,
+  faEllipsisVertical,
   faLayerGroup,
   faPen,
   faPlaneArrival,
@@ -100,7 +102,6 @@ export default function SimulationHistory() {
   const [search, setSearch] = useState('');
   const [dialogVisible, setDialogVisible] = useState(false);
   const [formInitialValues, setFormInitialValues] = useState<SimulationFormValues | undefined>();
-  const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Simulation | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -108,6 +109,9 @@ export default function SimulationHistory() {
   const [deleteTarget, setDeleteTarget] = useState<Simulation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteBatchTarget, setDeleteBatchTarget] = useState<Simulation | null>(null);
+  const [deletingBatch, setDeletingBatch] = useState(false);
+  const [deleteBatchError, setDeleteBatchError] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<Simulation | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renaming, setRenaming] = useState(false);
@@ -115,6 +119,12 @@ export default function SimulationHistory() {
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<number[]>([]);
   const [sweepDialogVisible, setSweepDialogVisible] = useState(false);
+  // The row-actions menu (Duplicate/Rename/Delete) is a single shared Menu
+  // instance rather than one per row — a ref (not state) tracks which row it
+  // was opened for, so the command callbacks below always read the row that
+  // was current when clicked, not a stale value from before a re-render.
+  const rowMenuRef = useRef<Menu>(null);
+  const rowMenuTarget = useRef<Simulation | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -183,6 +193,30 @@ export default function SimulationHistory() {
     }
   };
 
+  const confirmDeleteBatch = async () => {
+    if (!deleteBatchTarget?.batchId) {
+      return;
+    }
+    setDeletingBatch(true);
+    setDeleteBatchError(null);
+    try {
+      await apiClient.delete(`/api/simulations/batch/?id=${deleteBatchTarget.batchId}`);
+      setDeleteBatchTarget(null);
+      // A batch collapses to a single history row, so the same "step back a
+      // page if that was the last row" logic from confirmDelete applies here.
+      const remaining = (data?.results?.length ?? 1) - 1;
+      if (remaining <= 0 && page > 1) {
+        setPage((p) => p - 1);
+      } else {
+        refetch();
+      }
+    } catch {
+      setDeleteBatchError('Failed to delete sweep. Please try again.');
+    } finally {
+      setDeletingBatch(false);
+    }
+  };
+
   const openRename = (simulation: Simulation) => {
     setRenameError(null);
     setRenameValue(simulation.name);
@@ -219,7 +253,6 @@ export default function SimulationHistory() {
 
   const openDuplicate = async (simulation: Simulation) => {
     setDuplicateError(null);
-    setDuplicatingId(simulation.id);
     try {
       const { data } = await apiClient.get<SimulationConfig>(
         `/api/simulations/${simulation.id}/config/`,
@@ -228,8 +261,6 @@ export default function SimulationHistory() {
       setDialogVisible(true);
     } catch {
       setDuplicateError('Failed to load that run’s configuration. Please try again.');
-    } finally {
-      setDuplicatingId(null);
     }
   };
 
@@ -269,6 +300,43 @@ export default function SimulationHistory() {
   const startCompare = () => {
     navigate(`/compare?ids=${compareIds.join(',')}`);
   };
+
+  // Shared by every standalone row's "..." menu — each command reads
+  // rowMenuTarget.current at click time (see the ref's declaration above),
+  // so one Menu instance can serve the whole table instead of one per row.
+  const rowMenuItems = [
+    {
+      label: 'Duplicate',
+      icon: <FontAwesomeIcon icon={faCopy} />,
+      command: () => {
+        const row = rowMenuTarget.current;
+        if (row) {
+          openDuplicate(row);
+        }
+      },
+    },
+    {
+      label: 'Rename',
+      icon: <FontAwesomeIcon icon={faPen} />,
+      command: () => {
+        const row = rowMenuTarget.current;
+        if (row) {
+          openRename(row);
+        }
+      },
+    },
+    {
+      label: 'Delete',
+      icon: <FontAwesomeIcon icon={faTrash} />,
+      command: () => {
+        const row = rowMenuTarget.current;
+        if (row) {
+          setDeleteError(null);
+          setDeleteTarget(row);
+        }
+      },
+    },
+  ];
 
   return (
     <div className="-m-6 h-[calc(100%+3rem)] flex flex-col">
@@ -387,39 +455,59 @@ export default function SimulationHistory() {
               alignHeader="center"
               align="center"
               headerStyle={{ width: '3rem' }}
-              body={(row: Simulation) =>
-                // Cancel/delete act on one simulation — a batch row stands in
-                // for a whole group, so neither cleanly applies here yet.
-                row.batchId != null ? null : ACTIVE_STATUSES.includes(row.status) ? (
-                  // While a run is in flight, this slot cancels it; once it's
-                  // finished it becomes the delete action.
+              body={(row: Simulation) => {
+                // A batch row stands in for a whole group of runs — cancel
+                // doesn't cleanly apply to a group, but delete does (it
+                // removes every run in the sweep, see confirmDeleteBatch).
+                if (row.batchId != null) {
+                  return (
+                    <Button
+                      icon={<FontAwesomeIcon icon={faTrash} />}
+                      text
+                      aria-label={`Delete sweep ${row.name}`}
+                      tooltip="Delete sweep"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteBatchError(null);
+                        setDeleteBatchTarget(row);
+                      }}
+                      className="!border-transparent !bg-transparent !text-red-600 !text-lg"
+                    />
+                  );
+                }
+                // While a run is in flight, this slot cancels it; once it's
+                // finished it opens the Duplicate/Rename/Delete menu.
+                if (ACTIVE_STATUSES.includes(row.status)) {
+                  return (
+                    <Button
+                      icon={<FontAwesomeIcon icon={faBan} />}
+                      text
+                      aria-label={`Cancel ${row.name}`}
+                      tooltip="Cancel run"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCancelError(null);
+                        setCancelTarget(row);
+                      }}
+                      className="!border-transparent !bg-transparent !text-amber-600 !text-lg"
+                    />
+                  );
+                }
+                return (
                   <Button
-                    icon={<FontAwesomeIcon icon={faBan} />}
+                    icon={<FontAwesomeIcon icon={faEllipsisVertical} />}
                     text
-                    aria-label={`Cancel ${row.name}`}
-                    tooltip="Cancel run"
+                    aria-label={`Actions for ${row.name}`}
+                    tooltip="Actions"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setCancelError(null);
-                      setCancelTarget(row);
+                      rowMenuTarget.current = row;
+                      rowMenuRef.current?.toggle(e);
                     }}
-                    className="!border-transparent !bg-transparent !text-amber-600 !text-lg"
+                    className="!border-transparent !bg-transparent !text-slate-600 !text-lg"
                   />
-                ) : (
-                  <Button
-                    icon={<FontAwesomeIcon icon={faTrash} />}
-                    text
-                    aria-label={`Delete ${row.name}`}
-                    tooltip="Delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteError(null);
-                      setDeleteTarget(row);
-                    }}
-                    className="!border-transparent !bg-transparent !text-red-600 !text-lg"
-                  />
-                )
-              }
+                );
+              }}
             />
             <Column
               header="Name"
@@ -535,52 +623,25 @@ export default function SimulationHistory() {
               alignHeader="center"
               align="center"
               body={(row: Simulation) => (
-                <span className="inline-flex items-center">
-                  {row.batchId == null && (
-                    <>
-                      <Button
-                        icon={<FontAwesomeIcon icon={faCopy} />}
-                        text
-                        loading={duplicatingId === row.id}
-                        aria-label={`Duplicate ${row.name}`}
-                        tooltip="Duplicate"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openDuplicate(row);
-                        }}
-                        className="!border-transparent !bg-transparent !text-slate-500 !text-base"
-                      />
-                      <Button
-                        icon={<FontAwesomeIcon icon={faPen} />}
-                        text
-                        aria-label={`Rename ${row.name}`}
-                        tooltip="Rename"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openRename(row);
-                        }}
-                        className="!border-transparent !bg-transparent !text-slate-500 !text-base"
-                      />
-                    </>
-                  )}
-                  <Button
-                    icon={<FontAwesomeIcon icon={faChevronRight} />}
-                    text
-                    aria-label="View details"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (row.batchId != null) {
-                        navigate(`/batch/${row.batchId}`);
-                      } else {
-                        navigate(`/simulation/${row.id}/detail`);
-                      }
-                    }}
-                    className="!border-transparent !bg-transparent !text-brand-accent-active !text-lg"
-                  />
-                </span>
+                <Button
+                  icon={<FontAwesomeIcon icon={faChevronRight} />}
+                  text
+                  aria-label="View details"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (row.batchId != null) {
+                      navigate(`/batch/${row.batchId}`);
+                    } else {
+                      navigate(`/simulation/${row.id}/detail`);
+                    }
+                  }}
+                  className="!border-transparent !bg-transparent !text-brand-accent-active !text-lg"
+                />
               )}
             />
           </DataTable>
+
+          <Menu model={rowMenuItems} popup ref={rowMenuRef} />
         </div>
       </div>
 
@@ -634,6 +695,45 @@ export default function SimulationHistory() {
           results? This cannot be undone.
         </p>
         {deleteError && <Message severity="error" text={deleteError} className="mt-3 w-full" />}
+      </Dialog>
+
+      <Dialog
+        header="Delete sweep"
+        visible={deleteBatchTarget !== null}
+        onHide={() => {
+          if (!deletingBatch) {
+            setDeleteBatchTarget(null);
+          }
+        }}
+        draggable={false}
+        dismissableMask={!deletingBatch}
+        style={{ width: '28rem', maxWidth: '90vw' }}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              label="Cancel"
+              text
+              disabled={deletingBatch}
+              onClick={() => setDeleteBatchTarget(null)}
+            />
+            <Button
+              label="Delete sweep"
+              icon={<FontAwesomeIcon icon={faTrash} className="mr-2" />}
+              loading={deletingBatch}
+              onClick={confirmDeleteBatch}
+              className="!border-red-600 !bg-red-600 !text-white"
+            />
+          </div>
+        }
+      >
+        <p className="text-slate-700">
+          Delete <span className="font-semibold">{deleteBatchTarget ? displayName(deleteBatchTarget) : ''}</span>{' '}
+          and all {deleteBatchTarget?.batchSummary?.runCount ?? 'its'} runs in it? This cannot
+          be undone.
+        </p>
+        {deleteBatchError && (
+          <Message severity="error" text={deleteBatchError} className="mt-3 w-full" />
+        )}
       </Dialog>
 
       <Dialog

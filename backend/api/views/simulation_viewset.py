@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -79,7 +80,7 @@ class SimulationViewset(
             status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=False, methods=["get"], url_path="batch", url_name="batch")
+    @action(detail=False, methods=["get", "delete"], url_path="batch", url_name="batch")
     def batch(self, request):
         raw_id = request.query_params.get("id", "")
         if not raw_id.strip().isdigit():
@@ -88,6 +89,19 @@ class SimulationViewset(
                 status=status.HTTP_400_BAD_REQUEST,
             )
         batch = get_object_or_404(SimulationBatch, pk=int(raw_id))
+
+        if request.method == "DELETE":
+            # Deleting the SimulationBatch row alone would only null out its
+            # runs' batch_id (the FK is SET_NULL, same "protect the data"
+            # precedent as elsewhere) — a "delete this sweep" action means the
+            # whole group of runs, not just ungrouping them, so the runs are
+            # deleted explicitly first (cascading to their aircraft/events),
+            # then the now-empty batch itself.
+            with transaction.atomic():
+                Simulation.objects.filter(batch_id=batch.id).delete()
+                batch.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
         simulations = Simulation.objects.with_detail_for_batch(batch.id)
         serializer = SimulationDetailDto(simulations, many=True)
         return Response(

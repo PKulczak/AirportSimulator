@@ -64,6 +64,30 @@ class SimulationBatchResultsTest(BaseFeatureTest):
         response = self.client.get(reverse("simulation-batch"), {"id": 999999})
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_delete_batch_removes_every_run_in_it_and_the_batch_itself(self):
+        batch = SimulationBatch.objects.create(swept_variable="arrivalRatePerHour")
+        first, second = self.create_simulations(
+            2, status=Simulation.Status.COMPLETE, batch=batch
+        )
+        aircraft = self.create_aircraft(simulation=first, outcome=Aircraft.Outcome.SUCCESS)
+        untouched = self.create_simulations(1)  # unbatched — must survive
+
+        response = self.client.delete(f"{reverse('simulation-batch')}?id={batch.id}")
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Simulation.objects.filter(id__in=[first.id, second.id]).exists())
+        self.assertFalse(SimulationBatch.objects.filter(id=batch.id).exists())
+        self.assertFalse(Aircraft.objects.filter(id=aircraft.id).exists())
+        self.assertTrue(Simulation.objects.filter(id=untouched.id).exists())
+
+    def test_delete_batch_requires_id_param(self):
+        response = self.client.delete(reverse("simulation-batch"))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_delete_batch_404_for_unknown_batch(self):
+        response = self.client.delete(f"{reverse('simulation-batch')}?id=999999")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_sweep_creates_a_batch_whose_results_are_retrievable(self):
         runways = self.create_runways(2)
         payload = {

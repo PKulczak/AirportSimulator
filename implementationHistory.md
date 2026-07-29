@@ -26,6 +26,81 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-29 — Redesign: collapse row actions into a "..." menu; add sweep delete
+
+**Slice:** n/a (user-requested cleanup of Slice 2.1/2.2/2.3's row-actions UX, plus a new
+batch-delete endpoint)
+**Status:** Done
+
+**Request:** a standalone history row had four separate icon buttons (delete, duplicate,
+rename, view) — too many. Collapse Duplicate/Rename/Delete into a single "..." menu where
+the delete button used to sit, and use that same freed-up slot on a batch row (which
+currently has no action there at all) to add a way to delete an entire sweep.
+
+**Backend**
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) —
+  the existing `batch` action (`GET /api/simulations/batch/?id=`) now also accepts
+  `DELETE`: looks up the batch, deletes every `Simulation` with that `batch_id` (cascading
+  to their aircraft/events same as a normal single-simulation delete), then deletes the now-
+  empty `SimulationBatch` itself, all inside one `transaction.atomic()`. Deleting only the
+  `SimulationBatch` row wouldn't have been enough — `Simulation.batch` is `SET_NULL`, so
+  that alone would just ungroup the runs (leaving them as N standalone rows) rather than
+  actually deleting the sweep's results, which is what "delete this sweep" means from a
+  collapsed history row.
+
+**Frontend**
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — the left-hand action column (previously: null for a batch row, Cancel for an
+  active run, a plain trash icon otherwise) is now: a delete (trash) button for a batch
+  row (opens a new "Delete sweep" confirm dialog); Cancel unchanged for an active run; a
+  "..." (`faEllipsisVertical`) button for a finished standalone row that opens a single
+  shared PrimeReact `Menu` (popup) with Duplicate/Rename/Delete. The right-hand action
+  column now only has the view chevron — Duplicate and Rename moved into the menu.
+  One `Menu` instance serves every row (not one per row): a `rowMenuTarget` **ref** (not
+  state) is set to the clicked row immediately before `rowMenuRef.current?.toggle(e)`, and
+  each menu item's `command` reads `rowMenuTarget.current` at click time — avoids the
+  stale-closure bug that would appear from computing `model` off state set in the same
+  handler that calls `toggle()` (state updates aren't applied until the next render, but a
+  ref read happens live at command time).
+  `duplicatingId` (previously only used for a spinner on the now-removed Duplicate button)
+  was removed as dead state — the popup menu has no equivalent per-item loading affordance,
+  and the underlying `/config/` fetch is fast enough that dropping the spinner isn't
+  noticeable.
+
+**Verification**
+- [backend/tests/feature/simulation_batch_results_test.py](backend/tests/feature/simulation_batch_results_test.py)
+  — 3 new tests: deleting a batch removes every run in it (and their aircraft) plus the
+  batch itself, while an unrelated unbatched simulation survives untouched; 400 on a
+  missing `id`; 404 for an unknown batch. **Full suite: 171 passed** (+3, on top of Slice
+  6.1's +2 from the same session). Frontend `tsc -b` + `eslint src` clean.
+- Live end-to-end against the real dev DB/queue: created a real 3-run sweep via
+  `POST /api/simulations/sweep/` (batch 11, ids 162–164), confirmed it collapsed to one
+  history row via `GET /api/simulations/?search=...`, then `DELETE
+  /api/simulations/batch/?id=11` → 204; re-checking confirmed the history search now
+  returns **count: 0**, all three `GET .../detail/` calls 404, and the batch endpoint
+  itself 404s too.
+- Not visually verified in a browser (no browser-automation tool available in this
+  environment) — the new "..." menu's rendering/interaction and the "Delete sweep" dialog
+  are unexercised in a real click-through; verified via `tsc`/`eslint` and the live API
+  round-trip above.
+
+**Operational notes**
+- Before this session's edits, found (and this time correctly diagnosed) a genuine stray-
+  process situation: two `runserver` process trees running simultaneously, one of which
+  turned out to be this session's own healthy, auto-reloading dev server rather than an
+  orphan. Killed both anyway (per CLAUDE.md's "kill every match, don't try to guess which
+  one is extra") and started exactly one fresh `runserver` + one fresh `rundramatiq`,
+  confirming zero Redis-broker connections before restarting and that the only
+  connections afterward were the fresh worker's own two `--processes 2` `spawn_main`
+  children (matched by parent PID, not orphans). This session's backend edits (including
+  this entry's `DELETE` support on the `batch` action) were picked up live by that same
+  fresh `runserver` via `StatReloader` with no further restart needed.
+
+**Notes**
+- No equivalent "delete sweep" affordance was added to the `SweepResults` batch-detail
+  page (`/batch/:batchId`) itself — only requested for the history row. A follow-up could
+  add it there too for symmetry with the per-run delete that page already lacks.
+
 ## 2026-07-29 — Fix: batch row's "N runs"/status tags wrapped to 2 lines
 
 **Slice:** n/a (history collapse redesign follow-up, user-reported)
