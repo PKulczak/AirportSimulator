@@ -26,6 +26,70 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-29 — Slice 11.2 — CI pipeline
+
+**Slice:** 11.2 — CI pipeline (Epic 11, Dev-ex & reliability)
+**Status:** Done (workflow written and its steps validated locally; the actual GitHub
+Actions run itself not triggered — see Verification)
+
+**Changes**
+- [.github/workflows/ci.yml](.github/workflows/ci.yml) (new) — two independent jobs on
+  `push`/`pull_request`:
+  - `backend`: `actions/setup-python@v5` (3.13, matches this repo's actual dev
+    interpreter, pip-cached), `pip install -r requirements.txt`, then `pytest`. No
+    Postgres/Redis service containers — `pytest.ini` already points at
+    `tests/settings_test.py` (sqlite in-memory DB, dramatiq `StubBroker`, in-process
+    Channels layer), so the suite needs no external services or a `.env` file, confirmed
+    below.
+  - `frontend`: `actions/setup-node@v4` (Node 24, matches this repo's actual dev version,
+    npm-cached via the existing `package-lock.json`), `npm ci`, `npm run build` (`tsc -b`
+    then `vite build`), `npm run lint`. No `.env.local` needed either, confirmed below.
+  - Quoted `"on":` rather than bare `on:` — YAML 1.1 (which `pyyaml`/most linters use)
+    parses an unquoted `on` as the boolean `true`; GitHub's own parser handles the bare
+    form fine (virtually every public workflow uses it unquoted), but quoting sidesteps
+    the ambiguity entirely for zero cost, and lets it validate cleanly with a generic
+    YAML parser rather than only with GitHub-specific tooling.
+
+**Verification**
+- **The GitHub Actions run itself was not triggered from this environment** (no
+  push/network access here to actually exercise the pipeline on GitHub) — so "the
+  pipeline goes green" per the slice's own test is unverified end-to-end. Verified the
+  underlying commands directly instead, simulating a clean-checkout CI environment as
+  closely as possible:
+  - Backend: temporarily moved `backend/.env` out of the way (so no dev env file was
+    present, matching a fresh clone) and ran `pytest` — **171 passed**, confirming the
+    suite needs no `.env`/external Postgres/Redis, consistent with `tests/settings_test.py`.
+    `.env` restored immediately after.
+  - Frontend: temporarily moved `frontend/.env.local` out of the way and ran `npm run
+    build` and `npm run lint` against the existing `node_modules` — both clean. `.env.local`
+    restored immediately after.
+  - Also validated `.github/workflows/ci.yml` parses as valid YAML (via `pyyaml`) and
+    that `"on":` deserializes to the string key `"on"` (not the boolean `True` a bare
+    `on:` would under YAML 1.1).
+  - Did **not** get a clean local `npm ci` run: it failed with a Windows-only `EPERM` on
+    `lightningcss.win32-x64-msvc.node`, because this session's own long-running `npm run
+    dev` (`vite` + `tsc --watch`) process still holds that native binary open, so `npm
+    ci`'s `node_modules` wipe can't unlink it. This is a local file-lock artifact of a
+    live dev server on Windows, not something a GitHub Actions Ubuntu runner (fresh
+    checkout, no pre-existing `node_modules`) would ever hit — `npm install` (not `ci`)
+    plus the build/lint pass above already exercised the same lockfile-resolved
+    dependency tree successfully.
+
+**Notes**
+- Deliberately two independent jobs (not one), matching the slice's "pytest (backend) and
+  `npm run build` + `npm run lint` (frontend)" wording exactly — either can fail/report
+  without blocking the other, and they run in parallel.
+- Slice 11.1's `docker-compose.yml`/`backend/Dockerfile` were **not** reused here — the
+  backend test suite doesn't need Postgres/Redis at all (sqlite + stub broker), so
+  spinning up the Docker Compose stack just to run `pytest` would be strictly slower for
+  no benefit. That earlier slice's own "Notes" section flagged this as a possible future
+  reuse for CI; on inspection it isn't actually needed for *this* pipeline, only for a
+  hypothetical end-to-end/integration job against a real Postgres — out of scope for what
+  this slice asks for.
+- No branch-protection rule was configured to require these checks before merging — that's
+  a GitHub repo-settings change (not a file in this repo), out of scope for what was asked
+  and not something to change without explicit instruction.
+
 ## 2026-07-29 — Slice 11.1 — Docker Compose for local dev
 
 **Slice:** 11.1 — Docker Compose for local dev (Epic 11, Dev-ex & reliability)
