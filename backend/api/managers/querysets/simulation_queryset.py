@@ -51,6 +51,9 @@ class SimulationQuerySet(QuerySet):
         """
         return self.with_detail().filter(id__in=ids)
 
+    def in_batch(self, batch_id):
+        return self.filter(batch_id=batch_id)
+
     def with_runway_count(self):
         # `annotate()` with an aggregate silently drops the model's default
         # `Meta.ordering` (Django re-derives ordering around the GROUP BY it

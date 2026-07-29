@@ -14,6 +14,7 @@ import {
   faChevronRight,
   faCodeCompare,
   faCopy,
+  faLayerGroup,
   faPen,
   faPlaneArrival,
   faPlaneDeparture,
@@ -36,6 +37,7 @@ import {
 import type { Page } from '../types/common';
 import type { Simulation, SimulationConfig, SimulationStatus } from '../types/simulation';
 import SimulationFormDialog from './SimulationFormDialog';
+import SweepFormDialog from './SweepFormDialog';
 import backgroundImage from '../assets/Background.png';
 
 const PAGE_SIZE = 10;
@@ -87,6 +89,7 @@ export default function SimulationHistory() {
   const [renameError, setRenameError] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<number[]>([]);
+  const [sweepDialogVisible, setSweepDialogVisible] = useState(false);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -276,11 +279,18 @@ export default function SimulationHistory() {
               placeholder="Search"
               className="w-full max-w-sm justify-self-center bg-brand-bg"
             />
-            <Button
-              label="Create"
-              onClick={openCreate}
-              className="justify-self-end !border-brand-accent-active !bg-brand-accent-active font-bold !text-white"
-            />
+            <div className="flex justify-self-end gap-2">
+              <Button
+                icon={<FontAwesomeIcon icon={faLayerGroup} />}
+                label="Sweep"
+                onClick={() => setSweepDialogVisible(true)}
+              />
+              <Button
+                label="Create"
+                onClick={openCreate}
+                className="!border-brand-accent-active !bg-brand-accent-active font-bold !text-white"
+              />
+            </div>
           </div>
 
           {compareMode && (
@@ -501,6 +511,12 @@ export default function SimulationHistory() {
           setFormInitialValues(undefined);
         }}
         onCreated={() => refetch()}
+      />
+
+      <SweepFormDialog
+        visible={sweepDialogVisible}
+        onHide={() => setSweepDialogVisible(false)}
+        onDone={() => refetch()}
       />
 
       <Dialog

@@ -31,6 +31,16 @@ class Simulation(models.Model):
     aircraft_speed_knots = models.PositiveIntegerField()
     include_closures = models.BooleanField(default=False)
     random_seed = models.IntegerField(null=True, blank=True)
+    # Optional grouping for a set of runs (e.g. a parameter sweep). Nullable —
+    # most runs aren't part of a batch. SET_NULL rather than CASCADE: deleting
+    # the batch grouping shouldn't delete the underlying run results.
+    batch = models.ForeignKey(
+        "api.SimulationBatch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="simulations",
+    )
 
     error_message = models.TextField(null=True, blank=True)
 

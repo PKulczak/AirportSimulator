@@ -1,20 +1,22 @@
-import { useEffect } from 'react';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
 import { SelectButton } from 'primereact/selectbutton';
+import { Dropdown } from 'primereact/dropdown';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { usePost } from '../functions/axios';
 import RunwaySelectionField from './RunwaySelectionField';
 import {
-  defaultSimulationFormValues,
-  simulationFormSchema,
-  toCreateSimulationRequest,
-  type SimulationFormValues,
+  defaultSweepFormValues,
+  SWEEP_VARIABLE_OPTIONS,
+  sweepFormSchema,
+  toCreateSweepRequest,
+  type SweepFormValues,
 } from '../schemas/simulationForm';
-import type { CreateSimulationRequest, Simulation } from '../types/simulation';
+import type { CreateSweepRequest, SweepResponse } from '../types/simulation';
 
 const CLOSURES_OPTIONS: { label: string; value: boolean }[] = [
   { label: 'No', value: false },
@@ -23,71 +25,91 @@ const CLOSURES_OPTIONS: { label: string; value: boolean }[] = [
 
 const REQUIRED_MARK = <span className="text-red-600">*</span>;
 
-interface RequestFormProps {
-  onCreated: (simulation: Simulation) => void;
-  /** Pre-fill the form (the Duplicate flow); omit for a blank create form. */
-  initialValues?: SimulationFormValues;
+interface SweepFormProps {
+  /** Fired once the user dismisses the post-submit summary (Done button). */
+  onDone: () => void;
 }
 
-export default function RequestForm({ onCreated, initialValues }: RequestFormProps) {
+export default function SweepForm({ onDone }: SweepFormProps) {
   const { execute, loading: submitting, error: submitError } = usePost<
-    Simulation,
-    CreateSimulationRequest
-  >('/api/simulations/');
+    SweepResponse,
+    CreateSweepRequest
+  >('/api/simulations/sweep/');
+  const [result, setResult] = useState<SweepResponse | null>(null);
 
   const {
     control,
     handleSubmit,
     watch,
     setValue,
-    reset,
     formState: { errors },
-  } = useForm<SimulationFormValues>({
-    resolver: zodResolver(simulationFormSchema),
-    defaultValues: initialValues ?? defaultSimulationFormValues,
+  } = useForm<SweepFormValues>({
+    resolver: zodResolver(sweepFormSchema),
+    defaultValues: defaultSweepFormValues,
   });
-
-  // Re-seed the form when the caller swaps in new initial values (e.g. opening
-  // Duplicate for a different run without remounting the form).
-  useEffect(() => {
-    reset(initialValues ?? defaultSimulationFormValues);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialValues]);
 
   const selectedRunwayIds = watch('runwayIds');
   const runwayModes = watch('runwayModes');
   const runwayInitialStatus = watch('runwayInitialStatus');
+  const variable = watch('variable');
 
   const onSubmit = handleSubmit(async (values) => {
-    const created = await execute(toCreateSimulationRequest(values));
+    const created = await execute(toCreateSweepRequest(values));
     if (created) {
-      onCreated(created);
+      setResult(created);
     }
   });
 
   const runwayModesError: string | undefined =
     (errors.runwayModes?.message as string | undefined) ?? errors.runwayIds?.message;
 
+  if (result) {
+    const variableLabel =
+      SWEEP_VARIABLE_OPTIONS.find((option) => option.value === variable)?.label ?? variable;
+    return (
+      <div className="flex flex-col gap-4">
+        <Message
+          severity="success"
+          text={`Created ${result.simulations.length} simulation runs sweeping ${variableLabel}.`}
+          className="w-full"
+        />
+        <ul className="max-h-60 list-inside list-disc overflow-y-auto rounded border border-slate-200 p-3 text-sm text-slate-700">
+          {result.simulations.map((simulation) => (
+            <li key={simulation.id}>{simulation.name}</li>
+          ))}
+        </ul>
+        <Button
+          label="Done"
+          onClick={onDone}
+          className="-mx-6 -mb-8 mt-2 !rounded-t-none !rounded-b-md !border-0 !py-3 !text-lg !font-bold"
+        />
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr_1fr]">
         <div className="flex flex-col gap-1">
-          <label htmlFor="name" className="min-h-10 text-sm font-bold text-slate-800">
-            Name of Simulation {REQUIRED_MARK}
+          <label htmlFor="sweep-name" className="min-h-10 text-sm font-bold text-slate-800">
+            Sweep Name {REQUIRED_MARK}
           </label>
           <Controller
             name="name"
             control={control}
             render={({ field }) => (
               <InputText
-                id="name"
+                id="sweep-name"
                 value={field.value}
                 onChange={(e) => field.onChange(e.target.value)}
-                placeholder="Simulation Name"
+                placeholder="Sweep Name"
                 className={`bg-brand-bg ${errors.name ? 'p-invalid' : ''}`}
               />
             )}
           />
+          <small className="text-slate-500">
+            Each generated run's name is suffixed with the swept variable and its value.
+          </small>
           {errors.name && <small className="text-red-600">{errors.name.message}</small>}
         </div>
 
@@ -110,7 +132,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="randomSeed" className="min-h-10 text-sm font-bold text-slate-800">
+          <label htmlFor="sweep-randomSeed" className="min-h-10 text-sm font-bold text-slate-800">
             Random Seed (optional)
           </label>
           <Controller
@@ -118,7 +140,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
             control={control}
             render={({ field }) => (
               <InputNumber
-                inputId="randomSeed"
+                inputId="sweep-randomSeed"
                 value={field.value}
                 onValueChange={(e) => field.onChange(e.value ?? null)}
                 min={0}
@@ -131,7 +153,8 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
             )}
           />
           <small className="text-slate-500">
-            Set to reproduce an identical run; blank generates a fresh one.
+            Set to reuse one seed across every run in the sweep; blank gives each run
+            independent randomness.
           </small>
           {errors.randomSeed && (
             <small className="text-red-600">{errors.randomSeed.message}</small>
@@ -141,7 +164,10 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="flex flex-col gap-1">
-          <label htmlFor="durationHours" className="min-h-10 text-sm font-bold text-slate-800">
+          <label
+            htmlFor="sweep-durationHours"
+            className="min-h-10 text-sm font-bold text-slate-800"
+          >
             Simulation Duration (Hours) {REQUIRED_MARK}
           </label>
           <Controller
@@ -149,7 +175,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
             control={control}
             render={({ field }) => (
               <InputNumber
-                inputId="durationHours"
+                inputId="sweep-durationHours"
                 value={field.value / 60}
                 onValueChange={(e) => field.onChange(Math.round((e.value ?? 0) * 60))}
                 min={1}
@@ -166,7 +192,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="arrivalRate" className="min-h-10 text-sm font-bold text-slate-800">
+          <label htmlFor="sweep-arrivalRate" className="min-h-10 text-sm font-bold text-slate-800">
             Arrivals Per Hour {REQUIRED_MARK}
           </label>
           <Controller
@@ -174,7 +200,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
             control={control}
             render={({ field }) => (
               <InputNumber
-                inputId="arrivalRate"
+                inputId="sweep-arrivalRate"
                 value={field.value}
                 onValueChange={(e) => field.onChange(e.value ?? 0)}
                 min={0}
@@ -191,7 +217,10 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="departureRate" className="min-h-10 text-sm font-bold text-slate-800">
+          <label
+            htmlFor="sweep-departureRate"
+            className="min-h-10 text-sm font-bold text-slate-800"
+          >
             Departures Per Hour {REQUIRED_MARK}
           </label>
           <Controller
@@ -199,7 +228,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
             control={control}
             render={({ field }) => (
               <InputNumber
-                inputId="departureRate"
+                inputId="sweep-departureRate"
                 value={field.value}
                 onValueChange={(e) => field.onChange(e.value ?? 0)}
                 min={0}
@@ -216,7 +245,10 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="maxWaitMinutes" className="min-h-10 text-sm font-bold text-slate-800">
+          <label
+            htmlFor="sweep-maxWaitMinutes"
+            className="min-h-10 text-sm font-bold text-slate-800"
+          >
             Max Wait Time For Cancellation (Minutes) {REQUIRED_MARK}
           </label>
           <Controller
@@ -224,7 +256,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
             control={control}
             render={({ field }) => (
               <InputNumber
-                inputId="maxWaitMinutes"
+                inputId="sweep-maxWaitMinutes"
                 value={field.value}
                 onValueChange={(e) => field.onChange(e.value ?? 0)}
                 min={1}
@@ -237,6 +269,80 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
           {errors.maxWaitMinutes && (
             <small className="text-red-600">{errors.maxWaitMinutes.message}</small>
           )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-brand-bg p-3">
+        <p className="text-sm font-bold text-slate-800">Sweep Configuration</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="sweep-variable" className="text-sm font-bold text-slate-800">
+              Variable to Sweep {REQUIRED_MARK}
+            </label>
+            <Controller
+              name="variable"
+              control={control}
+              render={({ field }) => (
+                <Dropdown
+                  inputId="sweep-variable"
+                  value={field.value}
+                  options={SWEEP_VARIABLE_OPTIONS}
+                  onChange={(e) => field.onChange(e.value)}
+                  className="w-full"
+                />
+              )}
+            />
+            <small className="text-slate-500">
+              The value entered above is used as this sweep's starting point.
+            </small>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="sweep-rangeEnd" className="text-sm font-bold text-slate-800">
+              End Value {REQUIRED_MARK}
+            </label>
+            <Controller
+              name="rangeEnd"
+              control={control}
+              render={({ field }) => (
+                <InputNumber
+                  inputId="sweep-rangeEnd"
+                  value={field.value}
+                  onValueChange={(e) => field.onChange(e.value ?? 0)}
+                  showButtons
+                  className="w-full"
+                  inputClassName="w-full"
+                />
+              )}
+            />
+            {errors.rangeEnd && (
+              <small className="text-red-600">{errors.rangeEnd.message}</small>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="sweep-rangeStep" className="text-sm font-bold text-slate-800">
+              Step {REQUIRED_MARK}
+            </label>
+            <Controller
+              name="rangeStep"
+              control={control}
+              render={({ field }) => (
+                <InputNumber
+                  inputId="sweep-rangeStep"
+                  value={field.value}
+                  onValueChange={(e) => field.onChange(e.value ?? 1)}
+                  min={1}
+                  showButtons
+                  className="w-full"
+                  inputClassName="w-full"
+                />
+              )}
+            />
+            {errors.rangeStep && (
+              <small className="text-red-600">{errors.rangeStep.message}</small>
+            )}
+          </div>
         </div>
       </div>
 
@@ -257,17 +363,14 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
           severity="error"
           text={
             (submitError.body?.detail as string | undefined) ??
-            'Failed to create simulation. Please check the form and try again.'
+            'Failed to create the sweep. Please check the config and range/step.'
           }
         />
       )}
 
-      {/* Full-bleed footer bar: the negative margins cancel the dialog
-       * content's own padding (1.5rem sides, 2rem bottom) so this reaches
-       * every edge, matching the design's edge-to-edge submit bar. */}
       <Button
         type="submit"
-        label="Submit"
+        label="Create Sweep"
         loading={submitting}
         className="-mx-6 -mb-8 mt-2 !rounded-t-none !rounded-b-md !border-0 !py-3 !text-lg !font-bold"
       />

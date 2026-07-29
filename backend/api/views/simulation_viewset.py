@@ -12,6 +12,7 @@ from api.serializers.simulation_creation_dto import SimulationCreationDto
 from api.serializers.simulation_detail_dto import SimulationDetailDto
 from api.serializers.simulation_list_dto import SimulationListDto
 from api.serializers.simulation_rename_dto import SimulationRenameDto
+from api.serializers.simulation_sweep_creation_dto import SimulationSweepCreationDto
 from api.serializers.simulation_visualisation_dto import SimulationVisualisationDto
 from api.tasks import run_simulation
 
@@ -38,6 +39,8 @@ class SimulationViewset(
     def get_serializer_class(self):
         if self.action == "create":
             return SimulationCreationDto
+        if self.action == "sweep":
+            return SimulationSweepCreationDto
         if self.action in ("update", "partial_update"):
             return SimulationRenameDto
         return SimulationListDto
@@ -60,6 +63,21 @@ class SimulationViewset(
         simulation = get_object_or_404(Simulation.objects.with_detail(), pk=pk)
         serializer = SimulationDetailDto(simulation)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="sweep", url_name="sweep")
+    def sweep(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        simulations = serializer.save()
+
+        for simulation in simulations:
+            run_simulation.send(simulation.id)
+
+        output_serializer = SimulationListDto(simulations, many=True)
+        return Response(
+            {"batch_id": simulations[0].batch_id, "simulations": output_serializer.data},
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=["get"], url_path="compare", url_name="compare")
     def compare(self, request):

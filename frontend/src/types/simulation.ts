@@ -46,3 +46,26 @@ export interface CreateSimulationRequest {
   randomSeed?: number;
   runways: SimulationRunwayConfig[];
 }
+
+/** The base-config field a sweep steps — matches the backend's
+ * `SWEEPABLE_VARIABLES` wire-level keys exactly. */
+export type SweepVariable =
+  | 'arrivalRatePerHour'
+  | 'departureRatePerHour'
+  | 'durationMinutes'
+  | 'maxWaitMinutes';
+
+/** POST /api/simulations/sweep/ request body — a CreateSimulationRequest base
+ * config plus which field to step and its range. The base config's own value
+ * for `variable` is the sweep's starting point. */
+export interface CreateSweepRequest extends CreateSimulationRequest {
+  variable: SweepVariable;
+  rangeEnd: number;
+  rangeStep: number;
+}
+
+/** POST /api/simulations/sweep/ response. */
+export interface SweepResponse {
+  batchId: number;
+  simulations: Simulation[];
+}

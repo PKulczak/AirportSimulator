@@ -1,4 +1,5 @@
 from api.models.simulation import Simulation
+from api.models.simulation_batch import SimulationBatch
 from api.models.runway import Runway
 from api.models.simulation_runway import SimulationRunway
 from api.models.aircraft import Aircraft
@@ -7,6 +8,7 @@ from api.models.simulation_runway_event import SimulationRunwayEvent
 
 __all__ = [
     "Simulation",
+    "SimulationBatch",
     "Runway",
     "SimulationRunway",
     "Aircraft",

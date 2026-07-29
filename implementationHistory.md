@@ -26,6 +26,145 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-29 — Slice 5.2 — Batch-create a sweep
+
+**Slice:** 5.2 — Batch-create a sweep (Epic 5, Parameter sweep / capacity curve)
+**Status:** Done (code + tests + live-verified)
+
+**Backend**
+- [backend/api/serializers/simulation_sweep_creation_dto.py](backend/api/serializers/simulation_sweep_creation_dto.py)
+  (new) — `SimulationSweepCreationDto`: takes the same base-config fields as
+  `SimulationCreationDto` plus `variable` (one of `arrivalRatePerHour` /
+  `departureRatePerHour` / `durationMinutes` / `maxWaitMinutes` /
+  `aircraftSpeedKnots`), `rangeEnd`, `rangeStep`. The base config's own value
+  for `variable` is the sweep's start. For each stepped value it builds a full
+  run payload and re-validates it through `SimulationCreationDto` independently
+  — a value that's fine at the start of a sweep can violate a business rule
+  further along (e.g. sweeping `departureRatePerHour` up past what any
+  configured runway can accept), so validating the base config once isn't
+  enough. Caps at `MAX_SWEEP_RUNS = 50` and requires at least 2 steps. All-or-
+  nothing: if any generated step fails validation the whole request 400s with
+  no simulations created (validated in a first pass before any DB writes).
+  `create()` wraps the whole batch (new `SimulationBatch` + every `Simulation`)
+  in one `transaction.atomic()`.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py)
+  — `POST /api/simulations/sweep/`: validates via the DTO above, enqueues
+  `run_simulation` for every created simulation, returns
+  `{batchId, simulations: [...]}` (each shaped like the list endpoint).
+- A supplied `randomSeed` is applied identically to every generated run
+  (deliberate: isolates the swept variable as the only thing that changes
+  across the sweep, rather than also varying by sampling noise); omitting it
+  leaves every run independently random, same as a normal create.
+
+**Frontend**
+- [frontend/src/components/RunwaySelectionField.tsx](frontend/src/components/RunwaySelectionField.tsx)
+  (new) — extracted the runway-picker table (~230 lines) out of `RequestForm`
+  into a shared, prop-driven component (whole-object setters for
+  modes/statuses so the bulk "select all" path stays a single merged update,
+  matching the original's anti-stale-closure batching) so `SweepForm` doesn't
+  duplicate it. [RequestForm.tsx](frontend/src/components/RequestForm.tsx) now
+  just calls it.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts)
+  — extracted `simulationFormBaseSchema` (the raw field shape, pre-`.refine()`)
+  so it can be `.extend()`ed; `simulationFormSchema` is now
+  `simulationFormBaseSchema.refine(...)...` unchanged. Added `sweepFormSchema`
+  (base + `variable`/`rangeEnd`/`rangeStep`, plus range-validity checks
+  mirroring the backend's `MAX_SWEEP_RUNS`/minimum-2-steps rules),
+  `defaultSweepFormValues`, `toCreateSweepRequest()`. Deliberately does **not**
+  re-check the runway-acceptance rules (arrivals/departures need an available
+  matching runway) against every swept value client-side — only the backend's
+  per-step re-validation is authoritative there; the client would otherwise
+  give false confidence checking only the start value.
+- [frontend/src/components/SweepForm.tsx](frontend/src/components/SweepForm.tsx) +
+  [SweepFormDialog.tsx](frontend/src/components/SweepFormDialog.tsx) (new) —
+  same base-config fields as the create form plus a "Sweep Configuration"
+  block (variable dropdown, end value, step). On success shows an inline
+  summary ("Created N simulation runs sweeping X") listing each generated
+  run's name, with a Done button that closes the dialog and refetches history.
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — added a "Sweep" button (next to Create) opening `SweepFormDialog`.
+- [frontend/src/types/simulation.ts](frontend/src/types/simulation.ts) —
+  `SweepVariable`, `CreateSweepRequest`, `SweepResponse`.
+
+**Verification**
+- [backend/tests/feature/simulation_sweep_test.py](backend/tests/feature/simulation_sweep_test.py)
+  (new, 12 tests): N sims created with the variable stepped; all grouped into
+  one batch; all enqueued; rejects <2 steps, end-before-start, exceeding
+  `MAX_SWEEP_RUNS`, and an unknown variable; a later-step business-rule
+  violation rejects the *whole* sweep with zero sims created (atomicity); name
+  validation; shared seed applied identically vs. left independently random
+  per run; sweeping `durationMinutes` specifically (not just rates). **Full
+  suite: 153 passed** (+12). Frontend `tsc -b` + `eslint src` clean.
+- Live end-to-end against the real dev DB/queue: `POST /api/simulations/sweep/`
+  with `arrivalRatePerHour` 10→30 step 10 created 3 Pending sims in one batch;
+  the live dramatiq worker ran all three to `Complete` (confirmed via the
+  Slice-4.2 `/compare/` endpoint), then deleted by explicit id afterward.
+- Not visually verified in a browser (no browser-automation tool available in
+  this environment) — `tsc`/`eslint` plus the live API round-trip are the
+  verification for the new dialog/components; the manual "open Sweep, submit,
+  see N rows" check is the outstanding manual step.
+
+**Operational notes**
+- Restarting `runserver` after this change surfaced another instance of the
+  documented autoreload footgun: Django's StatReloader cleanly detected and
+  reloaded `simulation_viewset.py` (confirmed in its own log), but the
+  *pre-reload* child process didn't actually exit — it just stopped holding
+  the port. Not visible via `Get-NetTCPConnection` (which only shows the
+  live listener), only via checking the specific PID directly. Killed it
+  explicitly. Separately, killing a `runserver` watcher's PID took its actual
+  serving child down with it (unlike `rundramatiq`, where the worker's
+  `spawn_main` children reliably survive killing the parent) — restarted both
+  `runserver` and `rundramatiq` fully clean afterward and reconfirmed zero
+  stray processes and zero unexpected Redis connections.
+- Frontend (`npm run dev`) was left running rather than restarted — Vite's
+  HMR applies component changes live (unlike the backend's manual-restart
+  requirement), consistent with how prior frontend-only entries in this log
+  have handled it.
+
+## 2026-07-29 — Slice 5.1 — Group runs into a batch
+
+**Slice:** 5.1 — Group runs into a batch (Epic 5, Parameter sweep / capacity curve)
+**Status:** Done (code + tests + live-verified)
+
+**Changes**
+- [backend/api/models/simulation_batch.py](backend/api/models/simulation_batch.py) (new) —
+  `SimulationBatch`: deliberately minimal (just `id` + `created_at`), an identity to hang a
+  group of runs off. No sweep-specific fields (swept variable, range) — that metadata belongs
+  to whichever of 5.2/5.3 actually creates sweeps, not this grouping primitive.
+- [backend/api/models/simulation.py](backend/api/models/simulation.py) — added nullable
+  `batch = ForeignKey(SimulationBatch, related_name="simulations", on_delete=SET_NULL)`.
+  `SET_NULL` rather than `CASCADE`: deleting a batch grouping shouldn't delete the underlying
+  run results, mirroring the "protect the data" precedent set by `Runway`'s `PROTECT` from
+  `SimulationRunway`.
+- [backend/api/managers/querysets/simulation_queryset.py](backend/api/managers/querysets/simulation_queryset.py)
+  — added `SimulationQuerySet.in_batch(batch_id)` (`self.filter(batch_id=batch_id)`).
+- Migration `0007_simulationbatch_simulation_batch` (applied to the dev DB).
+- No API endpoint or FE change — out of scope for this slice (endpoint comes with 5.2's
+  sweep-create; a manual "assign to batch" surface doesn't exist and isn't needed yet).
+
+**Verification**
+- [backend/tests/feature/simulation_batch_test.py](backend/tests/feature/simulation_batch_test.py)
+  (new, 4 tests): batched sims retrievable as a group via `in_batch()`; the relation is
+  reachable from either side (`simulation.batch` / `batch.simulations`); an unbatched sim's
+  `batch` is `None`; deleting a batch leaves its simulations intact (`SET_NULL`, not cascaded).
+  **Full suite: 141 passed** (+4).
+- Live-verified against the real dev DB (not just the test DB): created a batch + 2 sims via
+  `manage.py shell` through the freshly-restarted process, confirmed both `batch.simulations`
+  and `Simulation.objects.in_batch(id)` returned exactly those two ids, then cleaned up.
+
+**Operational notes**
+- Before restarting, found the exact stray-process situation CLAUDE.md warns about: a
+  day-old orphaned `dramatiq` `spawn_main` child (parent PID had been recycled by an unrelated
+  live `hypercorn` process, so it was invisible to any `*dramatiq*`-filtered listing — only
+  the Redis-connection check caught it), a leftover `hypercorn` stack from 2026-07-28, and
+  **two separate concurrent `manage.py runserver` invocations** from earlier today. Killed all
+  of them (verified via both process-list and `Get-NetTCPConnection -RemoteAddress <redis-ip>`
+  down to zero), then started one fresh `runserver` + one fresh `rundramatiq` — and even that
+  fresh dramatiq worker's `spawn_main` children survived the parent's `taskkill //F`, exactly
+  as documented, and needed killing separately.
+- Frontend left untouched — this slice made no frontend changes and the running `npm run dev`
+  was already a single clean instance.
+
 ## 2026-07-29 — Slice 4.2 — Batched compare endpoint
 
 **Slice:** 4.2 — (Optional) Batched compare endpoint (Epic 4, Run comparison)

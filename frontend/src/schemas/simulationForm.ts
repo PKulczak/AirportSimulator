@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import type { CreateSimulationRequest, SimulationConfig } from '../types/simulation';
+import type {
+  CreateSimulationRequest,
+  CreateSweepRequest,
+  SimulationConfig,
+  SweepVariable,
+} from '../types/simulation';
 import type { SimulationDetail } from '../types/metrics';
 import type { OperatingMode, OperationalStatus } from '../types/runway';
 
@@ -39,7 +44,10 @@ export function validateSimulationName(raw: string): string | null {
   return null;
 }
 
-export const simulationFormSchema = z
+/** The raw field shape shared by the create form and the sweep form — kept
+ * separate from `simulationFormSchema`'s `.refine()` chain below so the sweep
+ * schema can `.extend()` it (Zod effects/refinements can't be extended). */
+const simulationFormBaseSchema = z
   .object({
     name: z
       .string()
@@ -70,7 +78,9 @@ export const simulationFormSchema = z
       .max(MAX_RUNWAYS, `At most ${MAX_RUNWAYS} runways may be selected`),
     runwayModes: z.record(z.string(), operatingModeSchema),
     runwayInitialStatus: z.record(z.string(), operationalStatusSchema),
-  })
+  });
+
+export const simulationFormSchema = simulationFormBaseSchema
   .refine(
     // Integer-only comparison (maxWait * 10 <= duration * 9) instead of
     // `maxWaitMinutes <= durationMinutes * 0.9` — avoids floating-point
@@ -164,6 +174,106 @@ export const defaultSimulationFormValues: SimulationFormValues = {
   runwayModes: {},
   runwayInitialStatus: {},
 };
+
+export const SWEEP_VARIABLE_OPTIONS: { label: string; value: SweepVariable }[] = [
+  { label: 'Arrivals Per Hour', value: 'arrivalRatePerHour' },
+  { label: 'Departures Per Hour', value: 'departureRatePerHour' },
+  { label: 'Duration (Minutes)', value: 'durationMinutes' },
+  { label: 'Max Wait Time (Minutes)', value: 'maxWaitMinutes' },
+];
+
+/** Max sweep runs — mirrors the backend's `SimulationSweepCreationDto.MAX_SWEEP_RUNS`. */
+export const MAX_SWEEP_RUNS = 50;
+
+function sweepStartValue(
+  data: { arrivalRate: number; departureRate: number; durationMinutes: number; maxWaitMinutes: number },
+  variable: SweepVariable,
+): number {
+  switch (variable) {
+    case 'arrivalRatePerHour':
+      return data.arrivalRate;
+    case 'departureRatePerHour':
+      return data.departureRate;
+    case 'durationMinutes':
+      return data.durationMinutes;
+    case 'maxWaitMinutes':
+      return data.maxWaitMinutes;
+  }
+}
+
+/** The sweep form reuses the base config fields and a subset of the create
+ * form's cross-field checks. Deliberately does NOT re-check the
+ * runway-acceptance rules (e.g. "an arrivals-accepting runway must be
+ * Available") here: those depend on the exact swept value, so a check against
+ * only the *starting* value would give false confidence — a later step in the
+ * range could still violate it. The backend re-validates every generated run
+ * independently and reports which stepped value failed; that's the source of
+ * truth for this class of error. */
+export const sweepFormSchema = simulationFormBaseSchema
+  .extend({
+    variable: z.enum(['arrivalRatePerHour', 'departureRatePerHour', 'durationMinutes', 'maxWaitMinutes']),
+    rangeEnd: z.number(),
+    rangeStep: z.number().int().min(1, 'Step must be at least 1'),
+  })
+  .refine((data) => data.maxWaitMinutes * 10 <= data.durationMinutes * 9, {
+    message: 'Max wait time must be at most 90% of the simulation duration',
+    path: ['maxWaitMinutes'],
+  })
+  .superRefine((data, ctx) => {
+    if (data.arrivalRate <= 0 && data.departureRate <= 0) {
+      const message = 'At least one of arrival or departure rate must be greater than zero';
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: ['arrivalRate'] });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: ['departureRate'] });
+    }
+  })
+  .refine((data) => data.runwayIds.every((id) => data.runwayModes[String(id)] !== undefined), {
+    message: 'Every selected runway needs an operating mode',
+    path: ['runwayModes'],
+  })
+  .refine((data) => !data.includeClosures || data.runwayIds.length >= 2, {
+    message: 'Select at least 2 runways when random runway closures are enabled',
+    path: ['runwayIds'],
+  })
+  .refine((data) => data.rangeEnd >= sweepStartValue(data, data.variable), {
+    message: "Must be greater than or equal to the swept variable's base value",
+    path: ['rangeEnd'],
+  })
+  .superRefine((data, ctx) => {
+    const start = sweepStartValue(data, data.variable);
+    const stepCount = Math.floor((data.rangeEnd - start) / data.rangeStep) + 1;
+    if (data.rangeEnd >= start && stepCount < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'The range and step must produce at least 2 runs to form a sweep',
+        path: ['rangeStep'],
+      });
+    }
+    if (data.rangeEnd >= start && stepCount > MAX_SWEEP_RUNS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `A sweep can create at most ${MAX_SWEEP_RUNS} runs (this range/step would create ${stepCount})`,
+        path: ['rangeStep'],
+      });
+    }
+  });
+
+export type SweepFormValues = z.infer<typeof sweepFormSchema>;
+
+export const defaultSweepFormValues: SweepFormValues = {
+  ...defaultSimulationFormValues,
+  variable: 'arrivalRatePerHour',
+  rangeEnd: 50,
+  rangeStep: 10,
+};
+
+export function toCreateSweepRequest(values: SweepFormValues): CreateSweepRequest {
+  return {
+    ...toCreateSimulationRequest(values),
+    variable: values.variable,
+    rangeEnd: values.rangeEnd,
+    rangeStep: values.rangeStep,
+  };
+}
 
 /** Maps a fetched run config into create-form values, for the Duplicate flow.
  * Pre-fills identically (name, seed, and each runway's initial mode/status) so
