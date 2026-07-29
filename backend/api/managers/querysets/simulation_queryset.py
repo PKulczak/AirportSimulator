@@ -44,6 +44,13 @@ class SimulationQuerySet(QuerySet):
             "simulation_runways__closure_events",
         )
 
+    def with_detail_for_ids(self, ids):
+        """Same annotations as with_detail(), scoped to a specific set of ids —
+        lets the batched compare endpoint fetch N runs' metrics in one query
+        instead of the frontend making N separate /detail/ calls.
+        """
+        return self.with_detail().filter(id__in=ids)
+
     def with_runway_count(self):
         # `annotate()` with an aggregate silently drops the model's default
         # `Meta.ordering` (Django re-derives ordering around the GROUP BY it

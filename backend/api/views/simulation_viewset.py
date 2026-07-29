@@ -61,6 +61,36 @@ class SimulationViewset(
         serializer = SimulationDetailDto(simulation)
         return Response(serializer.data)
 
+    @action(detail=False, methods=["get"], url_path="compare", url_name="compare")
+    def compare(self, request):
+        raw_ids = request.query_params.get("ids", "")
+        parts = [part.strip() for part in raw_ids.split(",") if part.strip()]
+        if not parts:
+            return Response(
+                {"detail": "The 'ids' query parameter is required, e.g. ?ids=1,2,3."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            # dict.fromkeys de-dupes while preserving the requested order.
+            ids = list(dict.fromkeys(int(part) for part in parts))
+        except ValueError:
+            return Response(
+                {
+                    "detail": "The 'ids' query parameter must be a comma-separated list of integers."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        simulations_by_id = {
+            simulation.id: simulation
+            for simulation in Simulation.objects.with_detail_for_ids(ids)
+        }
+        # Silently drop any id that doesn't exist, same as filter(id__in=...)
+        # would — the caller can tell which ids were found from the response.
+        ordered = [simulations_by_id[id_] for id_ in ids if id_ in simulations_by_id]
+        serializer = SimulationDetailDto(ordered, many=True)
+        return Response(serializer.data)
+
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         simulation = get_object_or_404(Simulation, pk=pk)

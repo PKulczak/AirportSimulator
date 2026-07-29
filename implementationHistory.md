@@ -26,6 +26,76 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-29 — Slice 4.2 — Batched compare endpoint
+
+**Slice:** 4.2 — (Optional) Batched compare endpoint (Epic 4, Run comparison)
+**Status:** Done (code + tests; not yet activated live, not yet committed)
+
+**Changes**
+- [backend/api/managers/querysets/simulation_queryset.py](backend/api/managers/querysets/simulation_queryset.py)
+  — added `SimulationQuerySet.with_detail_for_ids(self, ids)`: `self.with_detail().filter(id__in=ids)`,
+  reusing the existing `with_detail()` aggregation/prefetch logic rather than duplicating it.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) — added
+  `GET /api/simulations/compare/?ids=1,2,3` (a `@action(detail=False, ...)`, router name
+  `simulation-compare`). Parses the comma-separated `ids` query param, dedupes while preserving
+  request order (`dict.fromkeys`), 400s with `{"detail": ...}` if `ids` is missing or contains a
+  non-integer, silently drops unknown ids, and returns a bare JSON array (one `SimulationDetailDto`
+  block per found id, in requested order — no new serializer needed, reuses `SimulationDetailDto`
+  with `many=True`).
+
+**Verification**
+- [backend/tests/feature/simulation_compare_test.py](backend/tests/feature/simulation_compare_test.py)
+  (new, 6 tests): one metrics block per id; requested order preserved; unknown ids silently
+  omitted; repeated ids deduped; missing `ids` param → 400; non-integer id → 400.
+  **Full suite: 137 passed.**
+- Not restarted/live-verified against a running hypercorn — verified via the DRF `APIClient`
+  feature tests only.
+
+**Notes**
+- The frontend (Slice 4.1) does **not** call this endpoint yet — it fetches each run individually
+  via the existing per-run `/detail/` endpoint (matches 4.1's spec literally). This batched
+  endpoint exists as a follow-up optimisation the compare view could switch to later to cut N
+  requests down to 1.
+- These backend changes (viewset + queryset + new test file) are uncommitted in the working tree
+  as of this entry; Slice 4.1's frontend changes are already committed (`92564a0`).
+
+## 2026-07-29 — Slice 4.1 — Compare two or more completed runs
+
+**Slice:** 4.1 — Compare two or more completed runs (Epic 4, Run comparison)
+**Status:** Done (code + tsc/eslint clean; committed)
+
+**Changes**
+- [frontend/src/App.tsx](frontend/src/App.tsx) — added route `/compare` → `CompareRuns`.
+- [frontend/src/components/CompareRuns.tsx](frontend/src/components/CompareRuns.tsx) (new) —
+  reads run ids from the `ids` query param (`?ids=1,2,3`); fetches each run individually via the
+  existing `GET /api/simulations/{id}/detail/` endpoint in parallel (`useCompareDetails`);
+  requires ≥2 ids and ≥2 `Complete` runs, warning about any excluded/incomplete ones; renders
+  `CompareMetricsTable` behind a category dropdown (General Stats / Arrival Metrics / Departure
+  Metrics / Runways / Sim Variables).
+- [frontend/src/components/CompareMetricsTable.tsx](frontend/src/components/CompareMetricsTable.tsx)
+  (new) — generic metric-rows × runs-columns table; highlights the best (green, up-arrow) /
+  worst (red, down-arrow) / tied (equals icon) value per row for rows that declare
+  `better: 'higher' | 'lower'` — the "deltas highlighted" part of the spec.
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — added a "Compare runs" toggle (`compareMode`, `faCodeCompare` icon); in compare mode, clicking
+  a `Complete` row toggles it into `compareIds` (non-Complete rows dim to indicate they can't be
+  picked); a "Compare selected" button (enabled once ≥2 are selected) navigates to
+  `/compare?ids=...`.
+- No changes needed in `src/types/metrics.ts` — the existing `SimulationDetail` /
+  `SimulationDetailResponse` / `isDetailComplete` types were reused as-is.
+
+**Verification**
+- `npx tsc -b` and `npx eslint .` both clean.
+- **Test (manual, per slice spec — not yet performed this session):** run the same scenario with
+  1 vs 2 runways and confirm the compare view shows both with wait/diversion differences
+  highlighted.
+
+**Notes**
+- Composes with Slice 5.3 (chart building blocks) and pairs with Slice 4.2's batched endpoint as
+  a future optimisation (currently unused by this view).
+- Committed as `92564a0` — "Front end changes to allow for comparing between different
+  simulation."
+
 ## 2026-07-28 — Slice 2.4 — Cancel a Pending/Running simulation
 
 **Slice:** 2.4 — Cancel a Pending/Running simulation (Epic 2, Simulation management)
