@@ -119,7 +119,9 @@ class SimulationSweepCreationDto(serializers.Serializer):
     def create(self, validated_data):
         run_configs = validated_data.pop("_run_configs")
         with transaction.atomic():
-            batch = SimulationBatch.objects.create()
+            batch = SimulationBatch.objects.create(
+                swept_variable=validated_data["variable"]
+            )
             simulations = [
                 SimulationCreationDto().create({**config, "batch": batch})
                 for config in run_configs

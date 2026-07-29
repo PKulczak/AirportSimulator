@@ -26,6 +26,355 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-29 — Fix: batch row's "N runs"/status tags wrapped to 2 lines
+
+**Slice:** n/a (history collapse redesign follow-up, user-reported)
+**Status:** Done
+
+**Symptom:** on the history home page, a collapsed batch row's Name cell
+("N runs" tag) and Status cell (one tag per non-zero status count) could wrap
+onto a second line instead of staying on one.
+
+**Fix**
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — added `whitespace-nowrap` (text-level — prevents wrapping *within* a
+  span/Tag) alongside explicit `flex-nowrap` (flex-level — prevents the icon/
+  name/tag or the multiple status tags from wrapping as flex *items*) to both
+  cells. The table has no fixed `table-layout`, so the column simply grows to
+  fit the now-unwrapped content; the outer container's existing
+  `overflow-x-auto` handles horizontal scrolling if the table gets wider than
+  the viewport.
+
+**Verification**
+- `tsc -b` + `eslint src` clean. Frontend-only; Vite HMR applies it, no
+  backend restart needed.
+- Not visually verified in a browser (no browser-automation tool available in
+  this environment) — reasoned from the DataTable's default (non-fixed)
+  table-layout and the absence of any competing `max-width`/`table-layout`
+  CSS override in `index.css`.
+
+## 2026-07-29 — Redesign: collapse a sweep's runs into one history row
+
+**Slice:** n/a (ad-hoc redesign of Slice 5.1/5.2/5.3's history UX, user-requested)
+**Status:** Done
+
+**Request:** a sweep's N runs each showing up as a separate row in the history
+table didn't look good. Instead: one row per batch; clicking it opens the
+batch/sweep-results page (not a single run's detail); individual runs are
+reachable by clicking through from there; and a batch member's detail page
+back button returns to its sweep results, not the history home page (this
+last part was already done in the previous "sweep follow-ups" fix below, and
+continues to work unchanged here).
+
+**Backend**
+- [backend/api/managers/querysets/simulation_queryset.py](backend/api/managers/querysets/simulation_queryset.py)
+  — added `for_history()`: collapses every batch down to its earliest-created
+  (lowest-id) row via a `Min("id")`-per-`batch_id` subquery, unioned with all
+  standalone (`batch_id__isnull`) rows, `select_related("batch")` (so reading
+  `swept_variable` needs no extra query), then reuses `with_runway_count()`.
+  Safe specifically because a sweep's N runs are all created back-to-back
+  inside one request/transaction — nothing else can be created in between
+  them, so "first row per batch" can't accidentally split a batch's own runs
+  across two different history pages.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py)
+  — the `list` action's queryset is now `Simulation.objects.for_history()`
+  instead of `with_runway_count()`. Pagination's `count`/`next`/`previous` all
+  now correctly reflect *history items* (a batch counts as 1), not raw rows.
+- [backend/api/serializers/simulation_list_dto.py](backend/api/serializers/simulation_list_dto.py)
+  — added `batch_summary`: for a batch's representative row, one aggregate
+  query (`Count`/`Min`/`Max` in a single `.aggregate()` call, not three) over
+  every simulation in that batch, returning `sweptVariable`, `runCount`,
+  `statusCounts` (per-status counts, keyed by the model's actual capitalized
+  status strings — "Pending"/"Complete"/etc., matching the frontend's
+  `SimulationStatus` union exactly), and `rangeMin`/`rangeMax` for the swept
+  field. Null for a standalone run.
+- [backend/api/serializers/simulation_detail_dto.py](backend/api/serializers/simulation_detail_dto.py)
+  — added `batch_id` (already added to the list DTO in the previous fix below;
+  this closes the same gap on the single-run detail endpoint, which the batch
+  results page's per-run table now also relies on).
+
+**Frontend**
+- [frontend/src/types/simulation.ts](frontend/src/types/simulation.ts) — new
+  `BatchSummary` type; `Simulation.batchSummary: BatchSummary | null`.
+- [frontend/src/types/metrics.ts](frontend/src/types/metrics.ts) — `batchId`
+  added to both `SimulationDetail` and `SimulationNotComplete`. New `BatchRun`
+  type replaces `SimulationDetailResponse` for `BatchResults.simulations`:
+  unlike the single-run `/detail/` endpoint (deliberately modeled as "no
+  config fields until Complete"), the batch endpoint's `SimulationDetailDto`
+  *always* includes config/metric fields regardless of status (a
+  Pending/Running run just has not-yet-meaningful zeros/nulls) — `BatchRun`
+  reflects that real shape instead of pretending they're absent.
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — a batch row now renders as one collapsed item: name has the sweep's base
+  name (backend's " (variable: value)" suffix stripped via regex) plus a
+  layer-group icon and an "N runs" tag; Status shows one `Tag` per non-zero
+  status count instead of a single status; Duration/Aircraft-Flow columns show
+  a "min → max" range specifically for whichever column matches the swept
+  variable (unaffected columns still show the single representative value);
+  Duplicate/Rename and the cancel/delete action are hidden (none map cleanly
+  onto "the whole batch" without a batch-level endpoint); row click and the
+  chevron both navigate to `/batch/{batchId}` instead of a detail page;
+  compare-mode selection now also excludes/dims batch rows (a group isn't one
+  comparable result). Removed the now-redundant "view sweep results" icon
+  button added in the previous fix — the whole row does that now.
+- [frontend/src/functions/statusSeverity.ts](frontend/src/functions/statusSeverity.ts)
+  (new) — extracted `STATUS_SEVERITY` out of `SimulationHistory.tsx` (which
+  needed to stay component-only for Fast Refresh) so `SweepResults.tsx` could
+  reuse the same status→color mapping instead of duplicating it.
+- [frontend/src/components/SweepResults.tsx](frontend/src/components/SweepResults.tsx)
+  — the bottom table now lists **every** run in the batch (not just `Complete`
+  ones), each row clickable straight to `/simulation/{id}/detail`, with a
+  status `Tag` and metrics shown as "—" for anything not yet `Complete`. The
+  charts above are unchanged (still only plot `Complete` runs, still gated on
+  ≥2 of them) but no longer gate the whole page — previously, a batch with
+  fewer than 2 Complete runs showed *only* a warning and no way to reach any
+  individual run; now the runs table (and the ability to click into any run)
+  always renders regardless of chart availability.
+
+**Bug caught during review, fixed before shipping**
+- The first draft of `batch_summary`'s `status_counts` used lowercase Python
+  dict keys (`"pending"`, `"complete"`, …) while the frontend's
+  `SimulationStatus` union is capitalized (`'Pending'`, `'Complete'`). Fixed by
+  keying the dict with `Simulation.Status.PENDING.value` etc. (the model's
+  actual status strings) instead of hand-typed lowercase literals — caught by
+  re-reading the diff against the frontend type before running the tests, then
+  confirmed by updating and re-running the backend test assertions.
+
+**Verification**
+- **Full backend suite: 168 passed** (test files:
+  [simulation_list_test.py](backend/tests/feature/simulation_list_test.py) +5,
+  [simulation_detail_test.py](backend/tests/feature/simulation_detail_test.py)
+  +2 — a batch collapses to one row with the right representative id; total
+  `count` reflects collapsed items; `batchSummary` reports correct
+  `runCount`/`statusCounts`/`rangeMin`/`rangeMax`; both null-summary and
+  null-batch-id standalone-run cases). Frontend `tsc -b` + `eslint src` clean.
+- Live end-to-end against the real dev DB/queue: created a 4-run sweep
+  (`arrivalRatePerHour` 10→40 step 10) alongside one standalone run;
+  `GET /api/simulations/?search=live` returned **count: 5** (not 6) with the
+  sweep collapsed to its representative row (id 150) carrying
+  `batchSummary: {sweptVariable: arrivalRatePerHour, runCount: 4,
+  statusCounts: {Complete: 4, ...}, rangeMin: 10, rangeMax: 40}`, while the
+  standalone run's `batchId`/`batchSummary` were both null; confirmed
+  `GET /api/simulations/150/detail/` carries `batchId: 9` (what the detail
+  page's back button needs) and `GET /api/simulations/batch/?id=9` lists all 4
+  member runs. Deleted the 5 verification sims by explicit id afterward.
+- Not visually verified in a browser (no browser-automation tool available in
+  this environment) — the collapsed row's rendering (icon/tag/range columns)
+  and the batch page's now-always-visible runs table are unexercised in a real
+  click-through; verified via `tsc`/`eslint` and the live API data above.
+
+**Notes**
+- No batch-level cancel/delete endpoint exists yet, so those actions are
+  simply hidden on a collapsed row rather than approximated (e.g. "cancel"
+  acting on just the representative run would silently leave its siblings
+  running, which would be more confusing than no button at all).
+- Restarted both `runserver` and `rundramatiq` — hit the same known
+  autoreload-leaves-a-stray-child pattern documented in CLAUDE.md and prior
+  entries; cleaned up as usual before starting fresh.
+
+## 2026-07-29 — Fix: sweep follow-ups (unreachable results, broken duration validation)
+
+**Slice:** n/a (Slice 5.2/5.3 robustness fixes, both user-reported)
+**Status:** Done
+
+**Fix 1 — no way back to a sweep's results after leaving them**
+- Previously the only path to `/batch/:batchId` was the "View Sweep Results"
+  button on the sweep-creation success screen — closing that dialog (or
+  visiting later) left no way back.
+- [backend/api/serializers/simulation_list_dto.py](backend/api/serializers/simulation_list_dto.py)
+  — added `batch_id` (reads the model's own `batch_id` column directly, no
+  join) to `SimulationListDto`, so `GET /api/simulations/` now reports which
+  batch (if any) each run belongs to.
+- [frontend/src/types/simulation.ts](frontend/src/types/simulation.ts) —
+  `Simulation.batchId: number | null`.
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — a chart-line icon button appears in a batched row's actions column,
+  navigating straight to `/batch/{row.batchId}`; absent entirely for
+  standalone (non-swept) runs.
+- [backend/tests/feature/simulation_list_test.py](backend/tests/feature/simulation_list_test.py)
+  — 2 new tests: a batched run's `batchId` round-trips through the list
+  endpoint; a standalone run's is `null`.
+
+**Fix 2 — sweep duration validation compared hours to minutes**
+- **Root cause:** in [SweepForm.tsx](frontend/src/components/SweepForm.tsx),
+  the "Simulation Duration" field displays/edits **hours** but stores
+  **minutes** in form state (same conversion `RequestForm` has always done).
+  The sweep's "End Value"/"Step" fields are raw, unconverted numbers. The
+  client-side `sweepFormSchema` validation compared `rangeEnd` directly
+  against the swept variable's stored value — fine for the rate/max-wait
+  variables (no unit conversion involved), but nonsense for `durationMinutes`:
+  typing an End Value that matches what's *displayed* (hours) got compared
+  against a value in minutes, either falsely rejecting a valid sweep or
+  passing a client check that meant something different from what was typed.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts)
+  — removed the `rangeEnd >= start` refine, the min-2/max-50-steps
+  `superRefine`, and the now-dead `sweepStartValue` helper and `MAX_SWEEP_RUNS`
+  constant. The backend's `SimulationSweepCreationDto` already independently
+  re-validates the same range/step rules in the model's real units (plain
+  integers, no hours/minutes ambiguity) and is the actual source of truth here
+  — removing the client-side copy removes the broken comparison without
+  losing the check itself.
+- [frontend/src/components/SweepForm.tsx](frontend/src/components/SweepForm.tsx)
+  — added a `SWEEP_VARIABLE_UNITS` hint ("In minutes (not hours)." /
+  "In aircraft per hour.") under both End Value and Step, so the unit
+  ambiguity that caused the bug is spelled out instead of silently assumed.
+
+**Verification**
+- **Full backend suite: 163 passed** (+2, the new `batchId` list tests — the
+  removed frontend checks had no backend-side equivalent to update). Frontend
+  `tsc -b` + `eslint src` clean.
+- Live end-to-end: created a real sweep via `POST /api/simulations/sweep/`,
+  confirmed `GET /api/simulations/?search=...` (the exact endpoint
+  `SimulationHistory` polls) returns `batchId` matching the created batch for
+  each row, then deleted the verification sims by explicit id.
+- Not visually verified in a browser (no browser-automation tool available in
+  this environment) — the new history button and duration-sweep hint text are
+  unexercised in a real click-through; verified via `tsc`/`eslint` and the live
+  API check above.
+
+**Notes**
+- A sweep over `durationMinutes` still requires the user to enter End
+  Value/Step in minutes (matching the dropdown's "Duration (Minutes)" label) —
+  this fix removes the broken guess-and-check, it doesn't add hour-aware input
+  conversion for that field. If this keeps confusing people, the more thorough
+  fix would be converting the End Value/Step inputs themselves whenever
+  `durationMinutes` is the selected variable (mirroring the base field), not
+  just labeling the expected unit.
+
+## 2026-07-29 — Fix: sweep results chart showed a spike on an otherwise-flat line
+
+**Slice:** n/a (Slice 5.3 robustness fix)
+**Status:** Done
+
+**Symptom (reported):** on a batch where a metric (e.g. avg wait) was
+consistent throughout — every point displaying "0.0m" — the chart still
+rendered a visible jump partway along an otherwise flat line.
+
+**Root cause:** [LineChart.tsx](frontend/src/components/LineChart.tsx)'s Y
+domain (`yDomainMax = yMax * 1.15`) scales off the *raw, unrounded* point
+values, while labels/tooltips (`formatMinutes`/`formatCount`) round for
+display. Two points can display identically (both "0.0m") while their raw
+values differ — e.g. one run's average is exactly `0` (SQL `AVG` over
+all-zero rows) and another's is a tiny nonzero float (real sub-tenth-of-a-
+minute noise, or float-division noise in the throughput calculation
+`(success / duration) * 60`, which can land on `24.999999999999996` instead of
+`25`). The domain then scales to that tiny nonzero max, so the point carrying
+it plots near the top of the chart while the "identical-looking" zeros sit at
+the very bottom — a spike that contradicts what every label says.
+
+**Fix**
+- [frontend/src/components/SweepResults.tsx](frontend/src/components/SweepResults.tsx)
+  — added `roundTo(value, decimals)` and applied it to every metric *before*
+  building `LineChartPoint`s, at the same precision each is displayed at:
+  success rate to the nearest whole percent, avg wait to 1 decimal, throughput
+  to the nearest whole number. A point that reads the same as its neighbors
+  now always plots at the same height as them.
+
+**Verification**
+- `tsc -b` + `eslint src` clean.
+- Simulated the reported scenario (`[0, 0, 0.04, 2e-13]` → all round to `0` at
+  1 decimal), confirming the fix collapses near-zero noise before it reaches
+  the chart's domain calculation.
+- Frontend-only; Vite HMR applies it, no backend restart needed.
+
+**Notes**
+- General lesson, not sweep-chart-specific: any chart that derives its scale
+  from raw data must round to the same precision it displays, or "identical"
+  labels can silently plot at different heights. Worth remembering if Epic 6's
+  charts (Slice 6.1–6.3) compute derived rates the same way.
+
+## 2026-07-29 — Slice 5.3 — Sweep results chart
+
+**Slice:** 5.3 — Sweep results chart (Epic 5, Parameter sweep / capacity curve)
+**Status:** Done (code + tests + live-verified data pipeline)
+
+**Backend**
+- [backend/api/models/simulation_batch.py](backend/api/models/simulation_batch.py) —
+  added `swept_variable` (nullable `CharField`, wire-level camelCase name e.g.
+  `"arrivalRatePerHour"`, matching `CreateSweepRequest.variable` exactly so the
+  frontend needs no second mapping step). Migration
+  `0008_simulationbatch_swept_variable` (applied to the dev DB). 5.1 deliberately
+  left this off the batch primitive ("belongs to whichever slice actually
+  creates sweeps") — this is that slice.
+- [backend/api/serializers/simulation_sweep_creation_dto.py](backend/api/serializers/simulation_sweep_creation_dto.py)
+  — `create()` now stores `variable` onto the new `SimulationBatch.swept_variable`
+  field (one extra kwarg on the existing `SimulationBatch.objects.create()` call).
+- [backend/api/managers/querysets/simulation_queryset.py](backend/api/managers/querysets/simulation_queryset.py)
+  — added `with_detail_for_batch(batch_id)`: `with_detail()` scoped to the batch
+  and explicitly `.order_by("id")` (ascending id = ascending swept-variable
+  order, since a sweep's steps are created sequentially in that order — and
+  `with_detail()`'s aggregate `annotate()` otherwise silently drops the model's
+  default `-created_at` ordering, same caveat as `with_runway_count()`).
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py)
+  — `GET /api/simulations/batch/?id=<batchId>`: 400 if `id` is missing/non-
+  integer, 404 for an unknown batch, else `{batchId, sweptVariable, simulations:
+  [...]}` — one `SimulationDetailDto` block per run in the batch, in step order.
+  Mirrors Slice 4.2's `/compare/` shape but scoped by batch instead of explicit ids.
+
+**Frontend**
+- Used the `dataviz` skill before writing any chart code. Key decision it drove:
+  **three separate single-series line charts (small multiples)**, not one chart
+  with three lines — success rate (%), avg wait (minutes), and throughput
+  (ops/hr) are different units/scales, and cramming differently-scaled measures
+  onto one shared axis is the skill's #1 flagged anti-pattern (the dual-axis
+  problem, in spirit, even without literally drawing two scales). Ran
+  `validate_palette.js` on the 3 chart accent colors (documented palette slots
+  1/2/3 — blue/green/magenta) — passes with a contrast WARN on magenta that's
+  satisfied by this chart's direct end-labels + the table view (the skill's
+  documented "relief rule").
+- [frontend/src/components/LineChart.tsx](frontend/src/components/LineChart.tsx)
+  (new) — hand-rolled inline-SVG single-series line chart (no charting library
+  added — the app has none, and 2–50 points doesn't need one). Zero-baseline Y
+  axis, hairline recessive gridlines, 2px line with round caps, ≥8px end-dots
+  with a 2px surface-color ring, a direct label on the last point, gaps in the
+  line (not a misleading connecting segment) where a metric has no value for a
+  step. Hover: a crosshair + per-point tooltip; `hoveredIndex` is lifted to the
+  parent so multiple charts sharing an x-axis can link their crosshairs.
+- [frontend/src/components/SweepResults.tsx](frontend/src/components/SweepResults.tsx)
+  (new) — route `/batch/:batchId`; fetches the new batch endpoint (one call,
+  unlike Compare's N-parallel-fetch, since this endpoint already returns every
+  run at once); filters to `Complete` runs (warns about any excluded
+  Pending/Running/Error ones, mirroring `CompareRuns`'s pattern), sorts by the
+  swept variable's value, and renders the 3 linked `LineChart`s plus a plain
+  HTML data table underneath (the "table view" the skill requires as an
+  accessibility/exact-values companion to any chart). Requires ≥2 Complete runs
+  to draw a curve, same floor as Compare.
+- [frontend/src/types/metrics.ts](frontend/src/types/metrics.ts) — `BatchResults`.
+- [frontend/src/components/SweepForm.tsx](frontend/src/components/SweepForm.tsx)
+  — the post-submit summary now has a "View Sweep Results" button (alongside
+  "Done") that navigates straight to `/batch/{batchId}`.
+- [frontend/src/App.tsx](frontend/src/App.tsx) — added the `/batch/:batchId` route.
+
+**Verification**
+- [backend/tests/feature/simulation_batch_results_test.py](backend/tests/feature/simulation_batch_results_test.py)
+  (new, 8 tests): one detail block per simulation in batch/step order;
+  `sweptVariable` returned (and null when absent); excludes other batches'
+  simulations; 400 on missing/non-integer `id`; 404 for an unknown batch; and an
+  end-to-end test that a real `/sweep/` call's `batchId` is retrievable via
+  `/batch/`. **Full suite: 161 passed** (+8). Frontend `tsc -b` + `eslint src` clean.
+- Live end-to-end against the real dev DB/queue: created a real sweep
+  (`arrivalRatePerHour` 5→50 step 15, 2 runways, 60 min), let the live dramatiq
+  worker run all 4 to `Complete`, then read `/api/simulations/batch/?id=4` —
+  **success rate 100% → 96% → 64.1% → 46.3%** while successful-ops count
+  plateaus (10 → 24 → 25 → 25) as the 2-runway capacity saturates — exactly the
+  flattening/degrading curve this slice's manual test describes. Deleted the 4
+  verification sims by explicit id afterward (batch row 4 itself has no delete
+  endpoint — same known gap noted in Slice 5.1 — left as harmless dev-DB cruft).
+- Not visually verified in a browser (no browser-automation tool available in
+  this environment) — verified via `tsc`/`eslint`, the palette validator, and
+  the live API data pipeline above; opening `/batch/4`-style URLs and eyeballing
+  the rendered charts is the outstanding manual step.
+
+**Notes**
+- This page does not poll — Epic 1's auto-refresh only covers history/detail/
+  visualisation. Right after creating a sweep every run is Pending, so the
+  results page shows the "must be Complete" warning until the user revisits the
+  (bookmarkable, id-based) URL later. Consistent with the app's documented
+  polling gap; adding it here was out of scope for this slice.
+- Throughput is defined as successful completions per hour
+  (`successCount / durationMinutes * 60`), not raw aircraft generated — chosen
+  because it's what actually saturates as demand increases.
+
 ## 2026-07-29 — Slice 5.2 — Batch-create a sweep
 
 **Slice:** 5.2 — Batch-create a sweep (Epic 5, Parameter sweep / capacity curve)

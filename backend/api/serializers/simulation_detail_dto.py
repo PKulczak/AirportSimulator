@@ -14,6 +14,9 @@ class SimulationDetailDto(serializers.ModelSerializer):
     runway_stats = serializers.SerializerMethodField()
     closure_event_count = serializers.SerializerMethodField()
     timeline_events = serializers.SerializerMethodField()
+    # Null for a run that isn't part of a batch. Lets the detail page's back
+    # button return to the sweep's results instead of the history home page.
+    batch_id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Simulation
@@ -32,6 +35,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
             "started_at",
             "completed_at",
             "created_at",
+            "batch_id",
             "success_rate",
             "outcome_counts",
             "wait_time_stats",

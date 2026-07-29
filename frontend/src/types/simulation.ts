@@ -2,7 +2,22 @@ import type { SimulationRunwayConfig } from './runway';
 
 export type SimulationStatus = 'Pending' | 'Running' | 'Complete' | 'Error' | 'Cancelled';
 
-/** List-shape DTO, from GET /api/simulations/ and the create response. */
+/** Aggregate info for a batch/sweep, carried on its representative row in the
+ * history list (GET /api/simulations/ collapses a batch's N runs down to
+ * one). `rangeMin`/`rangeMax` are the swept variable's bounds across every
+ * run in the batch — null if the batch has no recorded swept variable. */
+export interface BatchSummary {
+  sweptVariable: SweepVariable | null;
+  runCount: number;
+  statusCounts: Record<SimulationStatus, number>;
+  rangeMin: number | null;
+  rangeMax: number | null;
+}
+
+/** List-shape DTO, from GET /api/simulations/ and the create response. A row
+ * with `batchId` set represents an entire sweep, collapsed to one item —
+ * `batchSummary` carries the aggregate the individual runs no longer show
+ * here (see BatchSummary). */
 export interface Simulation {
   id: number;
   name: string;
@@ -16,6 +31,9 @@ export interface Simulation {
   createdAt: string;
   completedAt: string | null;
   runwayCount: number;
+  /** The sweep/batch this run belongs to, or null for a standalone run. */
+  batchId: number | null;
+  batchSummary: BatchSummary | null;
 }
 
 /** GET /api/simulations/{id}/config/ — a run's full creation config, shaped to

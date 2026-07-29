@@ -4,6 +4,7 @@ import SimulationHistory from './components/SimulationHistory';
 import MetricBasePage from './components/MetricBasePage';
 import SimulationVisualisation from './components/SimulationVisualisation';
 import CompareRuns from './components/CompareRuns';
+import SweepResults from './components/SweepResults';
 import PageNotFound from './components/PageNotFound';
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
           element={<SimulationVisualisation />}
         />
         <Route path="/compare" element={<CompareRuns />} />
+        <Route path="/batch/:batchId" element={<SweepResults />} />
         <Route path="*" element={<PageNotFound />} />
       </Route>
     </Routes>

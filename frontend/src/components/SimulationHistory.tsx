@@ -28,6 +28,7 @@ import {
   usePollWhile,
 } from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
+import { STATUS_SEVERITY } from '../functions/statusSeverity';
 import {
   configToFormValues,
   SIMULATION_NAME_MAX,
@@ -35,24 +36,18 @@ import {
   type SimulationFormValues,
 } from '../schemas/simulationForm';
 import type { Page } from '../types/common';
-import type { Simulation, SimulationConfig, SimulationStatus } from '../types/simulation';
+import type {
+  Simulation,
+  SimulationConfig,
+  SimulationStatus,
+  SweepVariable,
+} from '../types/simulation';
 import SimulationFormDialog from './SimulationFormDialog';
 import SweepFormDialog from './SweepFormDialog';
 import backgroundImage from '../assets/Background.png';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 350;
-
-const STATUS_SEVERITY: Record<
-  SimulationStatus,
-  'info' | 'warning' | 'success' | 'danger' | 'secondary'
-> = {
-  Pending: 'info',
-  Running: 'warning',
-  Complete: 'success',
-  Error: 'danger',
-  Cancelled: 'secondary',
-};
 
 const ACTIVE_STATUSES: SimulationStatus[] = ['Pending', 'Running'];
 
@@ -66,6 +61,36 @@ function formatDateParts(iso: string): { date: string; time: string } {
     date: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`,
     time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
   };
+}
+
+// Matches the " (variable: value)" suffix SimulationSweepCreationDto appends
+// to each generated run's name, so a batch row can show the sweep's base
+// name instead of just its first (lowest-value) run's full name.
+const SWEEP_NAME_SUFFIX =
+  / \((arrivalRatePerHour|departureRatePerHour|durationMinutes|maxWaitMinutes|aircraftSpeedKnots): -?\d+\)$/;
+
+function displayName(row: Simulation): string {
+  return row.batchId != null ? row.name.replace(SWEEP_NAME_SUFFIX, '') : row.name;
+}
+
+/** The swept variable's raw min/max, for whichever column matches `field` —
+ * null everywhere else (a standalone row, or a batch row swept on a
+ * different field), so callers fall back to the row's own single value. */
+function sweptRange(row: Simulation, field: SweepVariable): { min: number; max: number } | null {
+  const summary = row.batchSummary;
+  if (
+    !summary ||
+    summary.sweptVariable !== field ||
+    summary.rangeMin == null ||
+    summary.rangeMax == null
+  ) {
+    return null;
+  }
+  return { min: summary.rangeMin, max: summary.rangeMax };
+}
+
+function formatDurationHours(minutes: number): string {
+  return (minutes / 60).toFixed(1).replace(/\.0$/, '');
 }
 
 export default function SimulationHistory() {
@@ -231,7 +256,9 @@ export default function SimulationHistory() {
   };
 
   const toggleCompareSelection = (row: Simulation) => {
-    if (row.status !== 'Complete') {
+    // A batch row represents a whole group of runs, not one comparable
+    // result — comparison needs individual completed runs.
+    if (row.status !== 'Complete' || row.batchId != null) {
       return;
     }
     setCompareIds((ids) =>
@@ -336,6 +363,8 @@ export default function SimulationHistory() {
               const row = e.data as Simulation;
               if (compareMode) {
                 toggleCompareSelection(row);
+              } else if (row.batchId != null) {
+                navigate(`/batch/${row.batchId}`);
               } else {
                 navigate(`/simulation/${row.id}/detail`);
               }
@@ -344,7 +373,7 @@ export default function SimulationHistory() {
               if (!compareMode) {
                 return '';
               }
-              if (row.status !== 'Complete') {
+              if (row.status !== 'Complete' || row.batchId != null) {
                 return 'opacity-40';
               }
               return compareIds.includes(row.id) ? '!bg-brand-bg' : '';
@@ -359,7 +388,9 @@ export default function SimulationHistory() {
               align="center"
               headerStyle={{ width: '3rem' }}
               body={(row: Simulation) =>
-                ACTIVE_STATUSES.includes(row.status) ? (
+                // Cancel/delete act on one simulation — a batch row stands in
+                // for a whole group, so neither cleanly applies here yet.
+                row.batchId != null ? null : ACTIVE_STATUSES.includes(row.status) ? (
                   // While a run is in flight, this slot cancels it; once it's
                   // finished it becomes the delete action.
                   <Button
@@ -391,11 +422,25 @@ export default function SimulationHistory() {
               }
             />
             <Column
-              field="name"
               header="Name"
               alignHeader="center"
               align="center"
               bodyClassName="font-semibold"
+              body={(row: Simulation) =>
+                row.batchSummary ? (
+                  <span className="inline-flex flex-nowrap items-center gap-2 whitespace-nowrap">
+                    <FontAwesomeIcon icon={faLayerGroup} className="text-slate-500" />
+                    <span className="whitespace-nowrap">{displayName(row)}</span>
+                    <Tag
+                      value={`${row.batchSummary.runCount} runs`}
+                      severity="secondary"
+                      className="whitespace-nowrap"
+                    />
+                  </span>
+                ) : (
+                  row.name
+                )
+              }
             />
             <Column
               header="Date Requested"
@@ -415,7 +460,12 @@ export default function SimulationHistory() {
               header="Duration (Hrs)"
               alignHeader="center"
               align="center"
-              body={(row: Simulation) => (row.durationMinutes / 60).toFixed(1).replace(/\.0$/, '')}
+              body={(row: Simulation) => {
+                const range = sweptRange(row, 'durationMinutes');
+                return range
+                  ? `${formatDurationHours(range.min)} → ${formatDurationHours(range.max)}`
+                  : formatDurationHours(row.durationMinutes);
+              }}
             />
             <Column
               field="runwayCount"
@@ -427,26 +477,49 @@ export default function SimulationHistory() {
               header="Aircraft Flow"
               alignHeader="center"
               align="center"
-              body={(row: Simulation) => (
-                <span className="inline-flex items-center gap-3">
-                  <span className="flex items-center gap-1.5">
-                    {row.arrivalRatePerHour}
-                    <FontAwesomeIcon icon={faPlaneArrival} className="text-slate-500" />
+              body={(row: Simulation) => {
+                const arrivalRange = sweptRange(row, 'arrivalRatePerHour');
+                const departureRange = sweptRange(row, 'departureRatePerHour');
+                return (
+                  <span className="inline-flex items-center gap-3">
+                    <span className="flex items-center gap-1.5">
+                      {arrivalRange ? `${arrivalRange.min} → ${arrivalRange.max}` : row.arrivalRatePerHour}
+                      <FontAwesomeIcon icon={faPlaneArrival} className="text-slate-500" />
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      {departureRange
+                        ? `${departureRange.min} → ${departureRange.max}`
+                        : row.departureRatePerHour}
+                      <FontAwesomeIcon icon={faPlaneDeparture} className="text-slate-500" />
+                    </span>
                   </span>
-                  <span className="flex items-center gap-1.5">
-                    {row.departureRatePerHour}
-                    <FontAwesomeIcon icon={faPlaneDeparture} className="text-slate-500" />
-                  </span>
-                </span>
-              )}
+                );
+              }}
             />
             <Column
               header="Status"
               alignHeader="center"
               align="center"
-              body={(row: Simulation) => (
-                <Tag value={row.status} severity={STATUS_SEVERITY[row.status]} />
-              )}
+              body={(row: Simulation) => {
+                if (!row.batchSummary) {
+                  return <Tag value={row.status} severity={STATUS_SEVERITY[row.status]} />;
+                }
+                const entries = (
+                  Object.entries(row.batchSummary.statusCounts) as [SimulationStatus, number][]
+                ).filter(([, count]) => count > 0);
+                return (
+                  <span className="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
+                    {entries.map(([statusName, count]) => (
+                      <Tag
+                        key={statusName}
+                        value={`${count} ${statusName}`}
+                        severity={STATUS_SEVERITY[statusName]}
+                        className="whitespace-nowrap"
+                      />
+                    ))}
+                  </span>
+                );
+              }}
             />
             <Column
               header={() => (
@@ -463,36 +536,44 @@ export default function SimulationHistory() {
               align="center"
               body={(row: Simulation) => (
                 <span className="inline-flex items-center">
-                  <Button
-                    icon={<FontAwesomeIcon icon={faCopy} />}
-                    text
-                    loading={duplicatingId === row.id}
-                    aria-label={`Duplicate ${row.name}`}
-                    tooltip="Duplicate"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openDuplicate(row);
-                    }}
-                    className="!border-transparent !bg-transparent !text-slate-500 !text-base"
-                  />
-                  <Button
-                    icon={<FontAwesomeIcon icon={faPen} />}
-                    text
-                    aria-label={`Rename ${row.name}`}
-                    tooltip="Rename"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openRename(row);
-                    }}
-                    className="!border-transparent !bg-transparent !text-slate-500 !text-base"
-                  />
+                  {row.batchId == null && (
+                    <>
+                      <Button
+                        icon={<FontAwesomeIcon icon={faCopy} />}
+                        text
+                        loading={duplicatingId === row.id}
+                        aria-label={`Duplicate ${row.name}`}
+                        tooltip="Duplicate"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openDuplicate(row);
+                        }}
+                        className="!border-transparent !bg-transparent !text-slate-500 !text-base"
+                      />
+                      <Button
+                        icon={<FontAwesomeIcon icon={faPen} />}
+                        text
+                        aria-label={`Rename ${row.name}`}
+                        tooltip="Rename"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRename(row);
+                        }}
+                        className="!border-transparent !bg-transparent !text-slate-500 !text-base"
+                      />
+                    </>
+                  )}
                   <Button
                     icon={<FontAwesomeIcon icon={faChevronRight} />}
                     text
                     aria-label="View details"
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/simulation/${row.id}/detail`);
+                      if (row.batchId != null) {
+                        navigate(`/batch/${row.batchId}`);
+                      } else {
+                        navigate(`/simulation/${row.id}/detail`);
+                      }
                     }}
                     className="!border-transparent !bg-transparent !text-brand-accent-active !text-lg"
                   />

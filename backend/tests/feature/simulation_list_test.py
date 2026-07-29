@@ -1,7 +1,7 @@
 from django.urls import reverse
 from rest_framework import status
 
-from api.models import Simulation
+from api.models import Simulation, SimulationBatch
 from tests.base_test import BaseFeatureTest
 
 
@@ -72,3 +72,79 @@ class SimulationListTest(BaseFeatureTest):
         ids = [item["id"] for item in body["results"]]
         self.assertEqual(ids[0], second.id)
         self.assertEqual(ids[1], first.id)
+
+    def test_list_includes_batch_id_for_a_batched_run(self):
+        batch = SimulationBatch.objects.create()
+        simulation = self.create_simulations(1, name="Batched", batch=batch)
+
+        response = self.client.get(reverse("simulation-list"), {"search": "Batched"})
+
+        body = response.json()
+        self.assertEqual(body["results"][0]["id"], simulation.id)
+        self.assertEqual(body["results"][0]["batchId"], batch.id)
+
+    def test_list_reports_null_batch_id_for_a_standalone_run(self):
+        self.create_simulations(1, name="Standalone")
+
+        response = self.client.get(reverse("simulation-list"), {"search": "Standalone"})
+
+        self.assertIsNone(response.json()["results"][0]["batchId"])
+
+    def test_list_collapses_a_batch_to_one_row(self):
+        batch = SimulationBatch.objects.create(swept_variable="arrivalRatePerHour")
+        first = self.create_simulations(
+            1, name="Sweep run", batch=batch, arrival_rate_per_hour=10
+        )
+        self.create_simulations(1, name="Sweep run", batch=batch, arrival_rate_per_hour=20)
+        self.create_simulations(1, name="Sweep run", batch=batch, arrival_rate_per_hour=30)
+        self.create_simulations(1, name="Standalone run")
+
+        response = self.client.get(reverse("simulation-list"))
+
+        body = response.json()
+        self.assertEqual(body["count"], 2)
+        ids = [item["id"] for item in body["results"]]
+        self.assertIn(first.id, ids)
+        self.assertEqual(Simulation.objects.filter(batch=batch).count(), 3)
+
+    def test_list_batch_row_summarises_run_count_status_and_range(self):
+        batch = SimulationBatch.objects.create(swept_variable="arrivalRatePerHour")
+        first = self.create_simulations(
+            1,
+            batch=batch,
+            arrival_rate_per_hour=10,
+            status=Simulation.Status.COMPLETE,
+        )
+        self.create_simulations(
+            1,
+            batch=batch,
+            arrival_rate_per_hour=20,
+            status=Simulation.Status.COMPLETE,
+        )
+        self.create_simulations(
+            1,
+            batch=batch,
+            arrival_rate_per_hour=30,
+            status=Simulation.Status.PENDING,
+        )
+
+        response = self.client.get(reverse("simulation-list"))
+
+        body = response.json()
+        item = next(i for i in body["results"] if i["id"] == first.id)
+        summary = item["batchSummary"]
+        self.assertEqual(summary["sweptVariable"], "arrivalRatePerHour")
+        self.assertEqual(summary["runCount"], 3)
+        self.assertEqual(summary["statusCounts"]["Complete"], 2)
+        self.assertEqual(summary["statusCounts"]["Pending"], 1)
+        self.assertEqual(summary["rangeMin"], 10)
+        self.assertEqual(summary["rangeMax"], 30)
+
+    def test_list_reports_null_batch_summary_for_a_standalone_run(self):
+        self.create_simulations(1, name="Standalone summary check")
+
+        response = self.client.get(
+            reverse("simulation-list"), {"search": "Standalone summary check"}
+        )
+
+        self.assertIsNone(response.json()["results"][0]["batchSummary"])

@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
-from api.models import Simulation
+from api.models import Simulation, SimulationBatch
 from api.notifications import publish_simulation_status
 from api.serializers.simulation_config_dto import SimulationConfigDto
 from api.serializers.simulation_creation_dto import SimulationCreationDto
@@ -33,7 +33,7 @@ class SimulationViewset(
 
     def get_queryset(self):
         if self.action == "list":
-            return Simulation.objects.with_runway_count()
+            return Simulation.objects.for_history()
         return super().get_queryset()
 
     def get_serializer_class(self):
@@ -77,6 +77,25 @@ class SimulationViewset(
         return Response(
             {"batch_id": simulations[0].batch_id, "simulations": output_serializer.data},
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["get"], url_path="batch", url_name="batch")
+    def batch(self, request):
+        raw_id = request.query_params.get("id", "")
+        if not raw_id.strip().isdigit():
+            return Response(
+                {"detail": "The 'id' query parameter (a batch id) is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        batch = get_object_or_404(SimulationBatch, pk=int(raw_id))
+        simulations = Simulation.objects.with_detail_for_batch(batch.id)
+        serializer = SimulationDetailDto(simulations, many=True)
+        return Response(
+            {
+                "batch_id": batch.id,
+                "swept_variable": batch.swept_variable,
+                "simulations": serializer.data,
+            }
         )
 
     @action(detail=False, methods=["get"], url_path="compare", url_name="compare")

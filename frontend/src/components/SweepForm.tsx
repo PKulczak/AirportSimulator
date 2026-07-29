@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
@@ -7,6 +8,8 @@ import { SelectButton } from 'primereact/selectbutton';
 import { Dropdown } from 'primereact/dropdown';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faChartLine } from '@fortawesome/free-solid-svg-icons';
 import { usePost } from '../functions/axios';
 import RunwaySelectionField from './RunwaySelectionField';
 import {
@@ -16,7 +19,18 @@ import {
   toCreateSweepRequest,
   type SweepFormValues,
 } from '../schemas/simulationForm';
-import type { CreateSweepRequest, SweepResponse } from '../types/simulation';
+import type { CreateSweepRequest, SweepResponse, SweepVariable } from '../types/simulation';
+
+// The "Simulation Duration" field above displays/edits hours but stores
+// minutes; End Value/Step are raw, unconverted numbers. Spelling out the
+// expected unit here avoids the confusion of someone entering "4" meaning
+// 4 hours where the field actually needs 240 (minutes).
+const SWEEP_VARIABLE_UNITS: Record<SweepVariable, string> = {
+  arrivalRatePerHour: 'aircraft per hour',
+  departureRatePerHour: 'aircraft per hour',
+  durationMinutes: 'minutes (not hours)',
+  maxWaitMinutes: 'minutes',
+};
 
 const CLOSURES_OPTIONS: { label: string; value: boolean }[] = [
   { label: 'No', value: false },
@@ -31,6 +45,7 @@ interface SweepFormProps {
 }
 
 export default function SweepForm({ onDone }: SweepFormProps) {
+  const navigate = useNavigate();
   const { execute, loading: submitting, error: submitError } = usePost<
     SweepResponse,
     CreateSweepRequest
@@ -78,11 +93,21 @@ export default function SweepForm({ onDone }: SweepFormProps) {
             <li key={simulation.id}>{simulation.name}</li>
           ))}
         </ul>
-        <Button
-          label="Done"
-          onClick={onDone}
-          className="-mx-6 -mb-8 mt-2 !rounded-t-none !rounded-b-md !border-0 !py-3 !text-lg !font-bold"
-        />
+        <p className="text-sm text-slate-500">
+          Results chart becomes available once at least 2 runs finish.
+        </p>
+        <div className="-mx-6 -mb-8 mt-2 grid grid-cols-2 gap-px overflow-hidden rounded-t-none rounded-b-md">
+          <Button label="Done" text onClick={onDone} className="!rounded-none !border-0 !py-3" />
+          <Button
+            label="View Sweep Results"
+            icon={<FontAwesomeIcon icon={faChartLine} />}
+            onClick={() => {
+              onDone();
+              navigate(`/batch/${result.batchId}`);
+            }}
+            className="!rounded-none !border-0 !border-brand-accent-active !bg-brand-accent-active !py-3 !font-bold !text-white"
+          />
+        </div>
       </div>
     );
   }
@@ -315,6 +340,7 @@ export default function SweepForm({ onDone }: SweepFormProps) {
                 />
               )}
             />
+            <small className="text-slate-500">In {SWEEP_VARIABLE_UNITS[variable]}.</small>
             {errors.rangeEnd && (
               <small className="text-red-600">{errors.rangeEnd.message}</small>
             )}
@@ -339,6 +365,7 @@ export default function SweepForm({ onDone }: SweepFormProps) {
                 />
               )}
             />
+            <small className="text-slate-500">In {SWEEP_VARIABLE_UNITS[variable]}.</small>
             {errors.rangeStep && (
               <small className="text-red-600">{errors.rangeStep.message}</small>
             )}

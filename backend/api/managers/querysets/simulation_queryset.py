@@ -1,4 +1,4 @@
-from django.db.models import Avg, Count, Max, Q, QuerySet
+from django.db.models import Avg, Count, Max, Min, Q, QuerySet
 
 
 class SimulationQuerySet(QuerySet):
@@ -54,6 +54,13 @@ class SimulationQuerySet(QuerySet):
     def in_batch(self, batch_id):
         return self.filter(batch_id=batch_id)
 
+    def with_detail_for_batch(self, batch_id):
+        """Same annotations as with_detail(), scoped to one batch and ordered
+        ascending by id (creation order) — a sweep's steps are created in
+        ascending-variable order, so this is also the sweep's step order.
+        """
+        return self.with_detail().filter(batch_id=batch_id).order_by("id")
+
     def with_runway_count(self):
         # `annotate()` with an aggregate silently drops the model's default
         # `Meta.ordering` (Django re-derives ordering around the GROUP BY it
@@ -62,6 +69,28 @@ class SimulationQuerySet(QuerySet):
         return self.annotate(
             runway_count=Count("simulation_runways", distinct=True)
         ).order_by("-created_at")
+
+    def for_history(self):
+        """One row per *history item* for the list endpoint: a standalone
+        Simulation, or the earliest-created representative of each batch.
+
+        A sweep's N runs are all created inside one request/transaction
+        (`SimulationSweepCreationDto.create()`), so they're always contiguous
+        in creation order — nothing else can be created in between them —
+        which is what makes "collapse to the batch's first row" safe here
+        rather than needing to worry about interleaved unrelated rows.
+        """
+        representative_ids = (
+            self.filter(batch_id__isnull=False)
+            .values("batch_id")
+            .annotate(first_id=Min("id"))
+            .values_list("first_id", flat=True)
+        )
+        return (
+            self.filter(Q(batch_id__isnull=True) | Q(id__in=representative_ids))
+            .select_related("batch")
+            .with_runway_count()
+        )
 
     def for_visualisation(self):
         return self.prefetch_related(

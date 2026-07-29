@@ -275,6 +275,27 @@ class SimulationDetailTest(BaseFeatureTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.json()["randomSeed"])
 
+    def test_detail_exposes_batch_id_for_a_batched_run(self):
+        from api.models import SimulationBatch
+
+        batch = SimulationBatch.objects.create(swept_variable="arrivalRatePerHour")
+        simulation = self.create_simulations(
+            1, status=Simulation.Status.COMPLETE, batch=batch
+        )
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["batchId"], batch.id)
+
+    def test_detail_reports_null_batch_id_for_a_standalone_run(self):
+        simulation = self.create_simulations(1, status=Simulation.Status.COMPLETE)
+        response = self.client.get(
+            reverse("simulation-detail", kwargs={"pk": simulation.id})
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.json()["batchId"])
+
     def test_initial_operational_status_ignores_trailing_run_closure(self):
         # A runway that started Available but was left closed by a trailing
         # (never-reopened) run closure must still report Available as its

@@ -1,4 +1,4 @@
-import type { SimulationStatus } from './simulation';
+import type { SimulationStatus, SweepVariable } from './simulation';
 import type { OperatingMode, OperationalStatus } from './runway';
 
 export interface OutcomeCounts {
@@ -74,6 +74,10 @@ export interface SimulationDetail {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  /** The sweep/batch this run belongs to, or null for a standalone run —
+   * lets the detail page's back button return to the sweep results instead
+   * of the history home page. */
+  batchId: number | null;
   successRate: number;
   outcomeCounts: OutcomeCounts;
   waitTimeStats: WaitTimeStats;
@@ -90,6 +94,7 @@ export interface SimulationNotComplete {
   name: string;
   status: Exclude<SimulationStatus, 'Complete'>;
   errorMessage?: string | null;
+  batchId: number | null;
 }
 
 export type SimulationDetailResponse = SimulationDetail | SimulationNotComplete;
@@ -98,4 +103,23 @@ export function isDetailComplete(
   detail: SimulationDetailResponse,
 ): detail is SimulationDetail {
   return detail.status === 'Complete';
+}
+
+/** One run inside GET /api/simulations/batch/?id=<batchId>. Unlike the
+ * single-run /detail/ endpoint (modeled narrowly by SimulationDetailResponse
+ * above), the backend's SimulationDetailDto always includes the full config
+ * and metric fields regardless of status — a Pending/Running run just has
+ * not-yet-meaningful metric values (0s/nulls), rather than omitting them. */
+export type BatchRun = Omit<SimulationDetail, 'status'> & {
+  status: SimulationStatus;
+  errorMessage?: string | null;
+};
+
+/** GET /api/simulations/batch/?id=<batchId> — every run in a batch (e.g. a
+ * sweep), in creation/step order. `sweptVariable` is null for a batch that
+ * isn't a sweep. */
+export interface BatchResults {
+  batchId: number;
+  sweptVariable: SweepVariable | null;
+  simulations: BatchRun[];
 }

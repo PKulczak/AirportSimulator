@@ -182,33 +182,20 @@ export const SWEEP_VARIABLE_OPTIONS: { label: string; value: SweepVariable }[] =
   { label: 'Max Wait Time (Minutes)', value: 'maxWaitMinutes' },
 ];
 
-/** Max sweep runs — mirrors the backend's `SimulationSweepCreationDto.MAX_SWEEP_RUNS`. */
-export const MAX_SWEEP_RUNS = 50;
-
-function sweepStartValue(
-  data: { arrivalRate: number; departureRate: number; durationMinutes: number; maxWaitMinutes: number },
-  variable: SweepVariable,
-): number {
-  switch (variable) {
-    case 'arrivalRatePerHour':
-      return data.arrivalRate;
-    case 'departureRatePerHour':
-      return data.departureRate;
-    case 'durationMinutes':
-      return data.durationMinutes;
-    case 'maxWaitMinutes':
-      return data.maxWaitMinutes;
-  }
-}
-
 /** The sweep form reuses the base config fields and a subset of the create
  * form's cross-field checks. Deliberately does NOT re-check the
  * runway-acceptance rules (e.g. "an arrivals-accepting runway must be
  * Available") here: those depend on the exact swept value, so a check against
  * only the *starting* value would give false confidence — a later step in the
- * range could still violate it. The backend re-validates every generated run
- * independently and reports which stepped value failed; that's the source of
- * truth for this class of error. */
+ * range could still violate it. Also deliberately does NOT check `rangeEnd`
+ * against the swept variable's base value or pre-compute a step count on the
+ * client: `durationMinutes` is stored in minutes but the "Simulation Duration"
+ * field displays/edits it in hours, while `rangeEnd`/`rangeStep` are raw,
+ * unconverted numbers — a client-side comparison between them silently
+ * assumed matching units and produced nonsense whenever duration was the
+ * swept variable. The backend re-validates every generated run independently
+ * (in the model's real units) and reports which stepped value failed — that's
+ * the source of truth for both of these classes of error. */
 export const sweepFormSchema = simulationFormBaseSchema
   .extend({
     variable: z.enum(['arrivalRatePerHour', 'departureRatePerHour', 'durationMinutes', 'maxWaitMinutes']),
@@ -233,28 +220,6 @@ export const sweepFormSchema = simulationFormBaseSchema
   .refine((data) => !data.includeClosures || data.runwayIds.length >= 2, {
     message: 'Select at least 2 runways when random runway closures are enabled',
     path: ['runwayIds'],
-  })
-  .refine((data) => data.rangeEnd >= sweepStartValue(data, data.variable), {
-    message: "Must be greater than or equal to the swept variable's base value",
-    path: ['rangeEnd'],
-  })
-  .superRefine((data, ctx) => {
-    const start = sweepStartValue(data, data.variable);
-    const stepCount = Math.floor((data.rangeEnd - start) / data.rangeStep) + 1;
-    if (data.rangeEnd >= start && stepCount < 2) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'The range and step must produce at least 2 runs to form a sweep',
-        path: ['rangeStep'],
-      });
-    }
-    if (data.rangeEnd >= start && stepCount > MAX_SWEEP_RUNS) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `A sweep can create at most ${MAX_SWEEP_RUNS} runs (this range/step would create ${stepCount})`,
-        path: ['rangeStep'],
-      });
-    }
   });
 
 export type SweepFormValues = z.infer<typeof sweepFormSchema>;

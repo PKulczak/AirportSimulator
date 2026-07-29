@@ -71,11 +71,15 @@ export default function MetricBasePage() {
   );
   usePollWhile(isRunning, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
 
+  // A run that belongs to a sweep goes back to that sweep's results, not the
+  // history home page — `data` is null in the loading/error states, so this
+  // falls back to home there.
+  const backTarget = data?.batchId != null ? `/batch/${data.batchId}` : '/';
   const backButton = (
     <Button
       icon="pi pi-chevron-left"
-      aria-label="Back to home"
-      onClick={() => navigate('/')}
+      aria-label="Back"
+      onClick={() => navigate(backTarget)}
       className="self-start"
     />
   );
@@ -177,8 +181,8 @@ export default function MetricBasePage() {
           <div className="flex items-center gap-3 rounded-md bg-brand-accent px-1.5 py-1">
             <Button
               icon="pi pi-chevron-left"
-              aria-label="Back to home"
-              onClick={() => navigate('/')}
+              aria-label="Back"
+              onClick={() => navigate(backTarget)}
               className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
             <span className="flex-1 text-center text-lg font-bold text-black">
