@@ -90,9 +90,11 @@ class SimulationRerunTest(BaseFeatureTest):
         self.assertEqual(first["successRate"], second["successRate"])
         self.assertEqual(first["closureEventCount"], second["closureEventCount"])
 
-    def test_rerun_without_seed_defaults_to_random(self):
-        # A run with no seed round-trips as null; the (optional) re-run then has
-        # no fixed seed either — the frontend only offers re-run when a seed exists.
+    def test_unseeded_run_still_gets_a_concrete_persisted_seed(self):
+        # A run created with no seed no longer round-trips as null — the
+        # runner generates and persists a concrete one, so the detail page
+        # always has something to show and "re-run with the same seed" is
+        # always available, not just for runs the user explicitly seeded.
         payload = {
             "name": "No seed run",
             "arrivalRatePerHour": 20,
@@ -106,6 +108,34 @@ class SimulationRerunTest(BaseFeatureTest):
         }
         sim_id = self._create_and_run(payload)
         detail = self._detail(sim_id)
-        self.assertIsNone(detail["randomSeed"])
+        self.assertIsNotNone(detail["randomSeed"])
         sim = Simulation.objects.get(id=sim_id)
-        self.assertIsNone(sim.random_seed)
+        self.assertEqual(sim.random_seed, detail["randomSeed"])
+
+    def test_rerun_of_an_originally_unseeded_run_still_reproduces_identical_metrics(self):
+        # The "re-run with same seed" flow works even when the original run
+        # was never explicitly seeded — it reproduces using the seed the
+        # runner auto-generated and persisted for it.
+        payload = {
+            "name": "Originally unseeded",
+            "arrivalRatePerHour": 30,
+            "departureRatePerHour": 30,
+            "durationMinutes": 60,
+            "maxWaitMinutes": 15,
+            "includeClosures": False,
+            "runways": [
+                {"runwayId": self.runways[0].id, "operatingMode": "Mixed"},
+            ],
+        }
+
+        first_id = self._create_and_run(payload)
+        first = self._detail(first_id)
+        self.assertIsNotNone(first["randomSeed"])
+
+        second_id = self._create_and_run(self._rerun_payload_from_detail(first))
+        second = self._detail(second_id)
+
+        self.assertEqual(first["randomSeed"], second["randomSeed"])
+        self.assertGreater(first["outcomeCounts"]["total"], 0)
+        self.assertEqual(first["outcomeCounts"], second["outcomeCounts"])
+        self.assertEqual(first["successRate"], second["successRate"])

@@ -26,6 +26,79 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Feature: always-persisted seed + always-available re-run
+
+**Slice:** n/a (user-requested follow-up to Slice 3.1/3.2's seed feature)
+**Status:** Done (code + tests + live-verified against the real dev DB/queue)
+
+**Request:** an unseeded run's detail page should still show *the* seed that was actually
+used (not "Random" with nothing to show), and "re-run with the same seed" should always
+be available rather than only appearing when a seed happened to be user-supplied. Also
+drop the "Re-run" text label — icon + tooltip only, matching the download/print buttons.
+
+**Root cause of the gap:** `SimulationRunner._execute` seeded the engine's RNG with
+`simulation.random_seed` directly — when a user left the seed field blank, that column
+was (and stayed) `NULL`, and `np.random.default_rng(None)` seeds itself from OS entropy
+without ever exposing what it picked. So an unseeded run's actual seed was never
+knowable or reproducible after the fact, and the frontend correctly hid the re-run
+button in exactly that case (there was nothing to re-run *with*).
+
+**Backend**
+- [backend/api/simulation/simulation_runner.py](backend/api/simulation/simulation_runner.py)
+  — `run()` now generates a concrete seed (`random.randint(0, 2147483647)`, matching
+  `SimulationCreationDto`'s existing bounds — the signed-32-bit range the column can
+  store) whenever `simulation.random_seed is None`, in the same save as the
+  Running-transition bookkeeping (`status`/`started_at`/`last_heartbeat_at`), before
+  `_execute` ever constructs the RNG. Every run — seeded or not — now has a concrete,
+  persisted `random_seed` by the time it's `Running`.
+
+**Frontend**
+- [frontend/src/components/MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx)
+  — removed the `data.randomSeed != null &&` guard around the re-run button (it's now
+  unconditionally rendered — every *new* completed run has a seed, per the backend fix
+  above); removed its `label="Re-run"` text, leaving just the `pi-replay` icon +
+  `tooltip` (matching the download/print buttons' icon-only style added earlier); the
+  tooltip/aria-label still degrade gracefully (no seed number quoted) for a pre-existing
+  legacy run created before this fix shipped, whose `randomSeed` can still be `null`.
+  `detailToRerunRequest`/`rerunWithSameSeed` already handled a `null` seed gracefully
+  (omits it from the request, same as before) — no changes needed there.
+- No change needed in `MetricsSimVariables.tsx`'s "Random Seed" display — it already
+  showed the real value whenever one was present and fell back to "Random" otherwise;
+  it'll just show a real number for every new run now, automatically.
+
+**Verification**
+- [backend/tests/simulation/seed_reproducibility_test.py](backend/tests/simulation/seed_reproducibility_test.py)
+  — 2 new tests: an unseeded run ends up with a concrete, persisted, in-bounds
+  `random_seed`; two separately-unseeded runs get different auto-generated seeds (not a
+  static fallback).
+- [backend/tests/feature/simulation_rerun_test.py](backend/tests/feature/simulation_rerun_test.py)
+  — replaced `test_rerun_without_seed_defaults_to_random` (asserted the *old*,
+  now-intentionally-changed behaviour — a `null` seed round-tripping as `null`) with
+  `test_unseeded_run_still_gets_a_concrete_persisted_seed` and
+  `test_rerun_of_an_originally_unseeded_run_still_reproduces_identical_metrics` (proves
+  the full loop: create with no seed → re-run using the auto-generated seed from its
+  detail response → identical `outcomeCounts`/`successRate`). **Full suite: 186 passed**
+  (net +2: 2 new engine tests, 1 old test replaced by 2 new ones).
+- Frontend `tsc -b --noEmit`, `npm run lint`, and `npm run test` (29, unrelated) all clean.
+- Live end-to-end against the real dev DB/queue: created a real run with no `randomSeed`
+  in the payload, let the live dramatiq worker complete it, and confirmed
+  `GET /api/simulations/172/detail/` returned a concrete `randomSeed` (`1599374532`) —
+  not `null`. Verification sim deleted by explicit id afterward.
+- Restarted both `runserver` and `rundramatiq` (engine change) — checked for strays
+  before and after per CLAUDE.md, confirmed a single clean tree of each and zero
+  Redis-broker connections before restarting, then started exactly one fresh instance of
+  each.
+- Not visually verified in a browser (no browser-automation tool available in this
+  environment) — the re-run button's new icon-only appearance and always-visible
+  behaviour are unexercised in a real click-through; verified via `tsc`/`eslint` and the
+  live API data above.
+
+**Notes**
+- A run created *before* this change shipped keeps whatever `random_seed` it already
+  had (`null` if it was never explicitly seeded) — this only changes behaviour for runs
+  started from here on; there's no backfill/migration for existing rows, matching how
+  this repo has handled every other additive field so far (e.g. `last_heartbeat_at`).
+
 ## 2026-07-30 — Fix: printed summary had a stray Arrival/Departure label and a blank timeline
 
 **Slice:** n/a (Slice 6.2 robustness fix, user-reported)

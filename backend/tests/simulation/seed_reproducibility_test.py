@@ -114,3 +114,47 @@ def test_same_seed_reproduces_identical_closures():
     assert len(first_closures) > 0
     assert first_aircraft == second_aircraft
     assert first_closures == second_closures
+
+
+@pytest.mark.django_db
+def test_unseeded_run_gets_a_persisted_concrete_seed():
+    # A user who leaves the seed blank still ends up with a concrete,
+    # persisted value — so the detail page can always show what was actually
+    # used, and "re-run with the same seed" is reproducible for every run,
+    # not just ones the user explicitly seeded.
+    helper = BaseFeatureTest()
+    runway = helper.create_runways(1)[0]
+    simulation = helper.create_simulations(1, random_seed=None)
+    SimulationRunway.objects.create(
+        simulation=simulation,
+        runway=runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+    assert simulation.random_seed is None
+
+    SimulationRunner().run(simulation.id)
+
+    simulation.refresh_from_db()
+    assert simulation.random_seed is not None
+    assert 0 <= simulation.random_seed <= 2147483647
+
+
+@pytest.mark.django_db
+def test_two_unseeded_runs_get_different_auto_generated_seeds():
+    helper = BaseFeatureTest()
+    r0 = helper.create_runways(1, identifier="AUTO-0")[0]
+    r1 = helper.create_runways(1, identifier="AUTO-1")[0]
+    first, second = helper.create_simulations(2, random_seed=None)
+    SimulationRunway.objects.create(
+        simulation=first, runway=r0, operating_mode=SimulationRunway.OperatingMode.MIXED
+    )
+    SimulationRunway.objects.create(
+        simulation=second, runway=r1, operating_mode=SimulationRunway.OperatingMode.MIXED
+    )
+
+    SimulationRunner().run(first.id)
+    SimulationRunner().run(second.id)
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.random_seed != second.random_seed

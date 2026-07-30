@@ -1,4 +1,5 @@
 import logging
+import random
 from datetime import timedelta
 
 import numpy as np
@@ -55,7 +56,19 @@ class SimulationRunner:
         # reference point even if the worker dies before the watchdog's first
         # tick — see _watchdog below for the periodic updates.
         simulation.last_heartbeat_at = simulation.started_at
-        simulation.save(update_fields=["status", "started_at", "last_heartbeat_at"])
+        if simulation.random_seed is None:
+            # A user who left the seed blank still ends up with a concrete,
+            # persisted value (rather than numpy silently seeding itself from
+            # OS entropy with nothing recorded) — so the detail page can
+            # always show what seed was actually used, and "re-run with the
+            # same seed" is reproducible for every run, not just ones the
+            # user explicitly typed a seed into. Bounds match
+            # SimulationCreationDto's `random_seed` field (signed-32-bit,
+            # what the column can store).
+            simulation.random_seed = random.randint(0, 2147483647)
+        simulation.save(
+            update_fields=["status", "started_at", "last_heartbeat_at", "random_seed"]
+        )
         publish_simulation_status(simulation.id, simulation.status)
 
         try:

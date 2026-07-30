@@ -199,20 +199,24 @@ export default function MetricBasePage() {
             <span className="flex-1 text-center text-lg font-bold text-black">
               {data.name} - {formatDateTime(data.completedAt)}
             </span>
-            {data.randomSeed != null && (
-              <Button
-                icon="pi pi-replay"
-                label="Re-run"
-                aria-label={`Re-run with the same seed (${data.randomSeed})`}
-                tooltip={`Re-run with the same seed (${data.randomSeed}) for an identical run`}
-                loading={rerunning}
-                onClick={rerunWithSameSeed}
-                className="!rounded-md !bg-brand-accent-active !border-brand-accent-active !text-black"
-              />
-            )}
+            <Button
+              icon="pi pi-replay"
+              aria-label="Re-run with the same seed"
+              tooltip={
+                data.randomSeed != null
+                  ? `Re-run with the same seed (${data.randomSeed}) for an identical run`
+                  : 'Re-run with the same seed for an identical run'
+              }
+              tooltipOptions={{ position: 'left' }}
+              loading={rerunning}
+              onClick={rerunWithSameSeed}
+              className="!rounded-md !bg-brand-accent-active !border-brand-accent-active !text-black"
+            />
             <Button
               icon="pi pi-eye"
               aria-label="View full replay"
+              tooltip="View full replay"
+              tooltipOptions={{ position: 'left' }}
               onClick={() => navigate(`/simulation/${data.id}/visualisation`)}
               className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
