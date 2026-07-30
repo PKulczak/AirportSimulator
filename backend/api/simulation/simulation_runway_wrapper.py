@@ -13,6 +13,7 @@ class SimulationRunwayWrapper:
         self.simulation_runway = simulation_runway
         self.resource = simpy.PriorityResource(env, capacity=1)
         self.closed = False
+        self.occupied = False
         # Weight class of the aircraft that most recently held this runway,
         # and the sim-time its operation ended — the wake-separation minima
         # the *next* operation must respect are computed from these (see
@@ -30,6 +31,13 @@ class SimulationRunwayWrapper:
         # so a process waiting on "notify me when this runway next reopens"
         # can just yield this and re-check the world afterwards.
         self.reopened_event = env.event()
+        # True for the duration of an aircraft's runway operation (between
+        # winning the resource and releasing it) — lets `closure_process`
+        # tell "queued, about to use this runway" apart from "actively
+        # landing/taking off on it right now" so a scheduled closure can wait
+        # for the latter instead of cutting it short. Same
+        # fresh-event-per-transition pattern as `reopened_event`.
+        self.vacated_event = env.event()
 
     @property
     def runway_id(self):
@@ -44,6 +52,21 @@ class SimulationRunwayWrapper:
 
     def is_open(self):
         return not self.closed
+
+    def mark_occupied(self):
+        """Called once an aircraft has won this runway's resource and is now
+        actually landing/taking off on it."""
+        self.occupied = True
+
+    def mark_vacated(self):
+        """Called once that aircraft's operation finishes and it releases the
+        resource, waking anything waiting on `vacated_event` (currently just
+        `closure_process`, deferring a due closure until the runway is
+        physically clear)."""
+        self.occupied = False
+        if not self.vacated_event.triggered:
+            self.vacated_event.succeed()
+        self.vacated_event = self.env.event()
 
     def register_waiting(self, process):
         """Track a process that is currently queued (not yet holding the

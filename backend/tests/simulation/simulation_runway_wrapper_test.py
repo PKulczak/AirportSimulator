@@ -115,3 +115,27 @@ def test_reopen_fires_reopened_event():
     assert previous_event.triggered is True
     assert wrapper.reopened_event is not previous_event
     assert wrapper.reopened_event.triggered is False
+
+
+@pytest.mark.django_db
+def test_starts_unoccupied_and_mark_occupied_sets_the_flag():
+    wrapper = _make_wrapper(SimulationRunway.OperatingMode.MIXED)
+    assert wrapper.occupied is False
+
+    wrapper.mark_occupied()
+
+    assert wrapper.occupied is True
+
+
+@pytest.mark.django_db
+def test_mark_vacated_clears_occupied_and_fires_vacated_event():
+    wrapper = _make_wrapper(SimulationRunway.OperatingMode.MIXED)
+    wrapper.mark_occupied()
+    previous_event = wrapper.vacated_event
+
+    wrapper.mark_vacated()
+
+    assert wrapper.occupied is False
+    assert previous_event.triggered is True
+    assert wrapper.vacated_event is not previous_event
+    assert wrapper.vacated_event.triggered is False

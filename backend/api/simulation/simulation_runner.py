@@ -381,12 +381,14 @@ class SimulationRunner:
             won_wrapper, aircraft.weight_class, env.now, simulation.weather_condition
         )
 
+        won_wrapper.mark_occupied()
         try:
             yield env.timeout(total_operation_minutes)
         finally:
             won_wrapper.resource.release(won_request)
             won_wrapper.last_operation_class = aircraft.weight_class
             won_wrapper.last_operation_end_time = env.now
+            won_wrapper.mark_vacated()
 
         self._finalize(aircraft, Aircraft.Outcome.SUCCESS, to_datetime, env)
 

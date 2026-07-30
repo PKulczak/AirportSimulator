@@ -26,6 +26,124 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Fix: scrubbing the replay timeline while playing got the clock stuck
+
+**Slice:** n/a (user-reported frontend bug)
+**Status:** Done
+
+**Symptom (reported):** "on replay if I move the timeline without pausing first the replay
+is stuck on a specific minute but the animation still plays and the pause button doesnt
+change icons."
+
+**Root cause:** while playing, `currentTime` had two independent writers racing for it: the
+autoplay tick loop (a `setTimeout` chain in `SimulationVisualisation.tsx`, rescheduling itself
+every time `currentTime` changed) and the timeline `Slider`'s `onChange` → `jumpToTime` (fired
+continuously during a drag). Dragging without pausing first let the two fight over
+`currentTime`/the pending tick timeout, leaving the clock (and everything derived from it —
+the queue tables, runway open/closed state, the "Current Time" label) stuck wherever that race
+happened to settle, while `isPlaying` itself was never touched by either writer — so the
+play/pause button never got a reason to re-render with a different icon. Separately, the
+runway occupancy animation in `Runway.tsx` doesn't read `currentTime` directly; it runs its own
+`requestAnimationFrame` loop off `getSmoothTime()`, which extrapolates continuously from
+wall-clock time whenever `isPlaying` is `true` — since `isPlaying` was never flipped by the
+stuck clock, that loop kept right on extrapolating, producing the "animation still plays"
+symptom even though the actual replay state was frozen.
+
+**Changes**
+- [frontend/src/components/SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx)
+  — `jumpToTime` now calls `setIsPlaying(false)` alongside its existing `clearScheduledTick()`
+  before updating `currentTime`. This removes the second writer entirely (scrubbing always
+  pauses first, matching how most media/replay scrubbers behave), which as a side effect also
+  zeroes `getSmoothTime`'s `minutesPerMs` (via the existing `clockAnchorRef` effect) so the
+  runway animation freezes in sync with the now-paused clock instead of continuing to
+  extrapolate, and correctly flips the play/pause button to "Play" the moment the user starts
+  scrubbing.
+
+**Verification**
+- `npx tsc -b --noEmit`, `npm run lint`, `npm run test` (46, unrelated — no test exists for
+  this replay page's timing behavior), and `npm run build` all clean.
+- **Not verified in a browser** (no browser-automation tool available in this environment) —
+  the fix was reasoned through from the component's own state model (tick loop / scrub handler
+  / `getSmoothTime` anchor) rather than observed live; this should be manually clicked through
+  (play, then drag the scrubber without pausing) before considering this fully confirmed.
+
+**Notes**
+- Deliberately does **not** auto-resume playback after the drag ends (no `onSlideEnd` handler
+  was wired up for that) — scrubbing simply pauses, same as clicking Pause; the user presses
+  Play again to resume from the new position. If auto-resume-after-scrub turns out to be the
+  preferred UX, that would need an explicit "was playing before this drag" flag plus wiring the
+  Slider's `onSlideEnd`, which felt like scope beyond what was reported as broken.
+
+## 2026-07-30 — Fix: runway closures could cut a landing/take-off short
+
+**Slice:** n/a (user-reported engine bug)
+**Status:** Done
+
+**Symptom (reported):** "a runway closure shouldnt happen instantly, if a runway closure
+events happen on a runway they plane on the runway should land/takeoff and then the runway
+closure happens." `closure_process` flipped the runway to closed (DB status +
+`SimulationRunwayEvent(Closed)`) the instant its `rng.exponential`-timed interval elapsed,
+with no check for whether an aircraft was mid-operation (already holding the runway's SimPy
+resource, actively landing/taking off) at that exact moment — a closure could land in the
+middle of an operation the model itself never showed being interrupted, an inconsistency
+between "the runway is now closed" and "an aircraft is still on it."
+
+**Root cause:** `SimulationRunwayWrapper` already tracked *queued* aircraft (so `close()`
+could correctly interrupt those without touching one already holding the resource), but
+nothing tracked "currently occupied, mid-operation" — so `closure_process` had no way to tell
+"free" apart from "occupied" and always closed immediately on interval expiry.
+
+**Changes**
+- [backend/api/simulation/simulation_runway_wrapper.py](backend/api/simulation/simulation_runway_wrapper.py)
+  — added `self.occupied` plus a `vacated_event` (same fresh-event-per-transition pattern as
+  the existing `reopened_event`), and `mark_occupied()`/`mark_vacated()` methods. `mark_vacated`
+  fires `vacated_event` and immediately replaces it with a fresh unfired one.
+- [backend/api/simulation/simulation_runner.py](backend/api/simulation/simulation_runner.py)
+  — `_aircraft_process_body` calls `won_wrapper.mark_occupied()` right before the runway-
+  operation `env.timeout`, and `won_wrapper.mark_vacated()` in the same `finally` block that
+  already releases the resource and records `last_operation_class`/`last_operation_end_time`.
+- [backend/api/simulation/closures.py](backend/api/simulation/closures.py) — `closure_process`
+  now, after its interval timeout fires, loops `while wrapper.occupied: yield
+  wrapper.vacated_event` before doing any of the actual closing (status flip, `wrapper.close()`,
+  DB save, `SimulationRunwayEvent(Closed)`). The `while` (not `if`) re-checks in case another
+  aircraft wins the resource in the same instant the previous one releases it. `wrapper.close()`
+  itself is unchanged — it's now simply never called while occupied, so its "never touches a
+  process already holding the resource" doc comment is enforced one level up instead of only
+  applying to queued processes.
+
+**Verification**
+- `pytest` — 224 passed (220 previously + 4 new): added
+  `test_closure_process_waits_for_an_occupied_runway_to_vacate_before_closing` and
+  `test_closure_process_closes_immediately_when_the_runway_is_not_occupied` to
+  `backend/tests/simulation/closures_test.py` (using a small deterministic fake rng so the
+  test can assert on exact timing — interval due at t=5 while an aircraft occupies until
+  t=50, and confirms the `Closed` event lands at t=50, not t=5), plus
+  `test_starts_unoccupied_and_mark_occupied_sets_the_flag` and
+  `test_mark_vacated_clears_occupied_and_fires_vacated_event` in
+  `backend/tests/simulation/simulation_runway_wrapper_test.py`.
+- Checked for stray/duplicate `runserver`/`rundramatiq`/`vite` processes before restarting
+  (per this file's own CLAUDE.md-documented protocol — none of today's earlier restarts had
+  left anything unaccounted for), killed the three tracked dev processes with `taskkill //F
+  //T`, confirmed the process list and Redis (`10.11.90.45:6379`) connection list were both
+  empty, then started fresh `runserver`/`rundramatiq`/`npm run dev` instances.
+- Live-verified against the real dev DB/queue: created a real simulation (id 187, 2 runways,
+  closures + Snow weather enabled to force frequent closures, seed 42) via `POST
+  /api/simulations/`, waited for it to complete, then fetched `GET
+  /api/simulations/187/visualisation/` and cross-checked every runway's `Closed` event
+  timestamp against every successful aircraft's `[runwayAssignedTime, completionTime]`
+  occupancy window on that runway: **0 closures landed inside an occupancy window** (32
+  closure events total across both runways), and **14 closures fired at the exact instant**
+  an aircraft's operation completed on that runway — i.e. the closure was deferred until the
+  occupant cleared, then applied immediately, not cutting anything short and not delaying
+  needlessly beyond that.
+
+**Notes**
+- Only in-progress *operations* (mid-landing/take-off) are protected; aircraft still queued
+  for a runway are unaffected and continue to be interrupted by `wrapper.close()` exactly as
+  before — that's existing, correct behavior this fix didn't touch.
+- No frontend changes were needed — closure event timestamps were always just displayed as
+  given by the backend; they're simply more accurate now.
+
 ## 2026-07-30 — Redesign: reordered create-simulation and sweep forms into a fixed 5-line layout
 
 **Slice:** n/a (user-requested layout reorganization of `RequestForm.tsx`/`SweepForm.tsx`)

@@ -12,6 +12,24 @@ from api.simulation.simulation_runway_wrapper import SimulationRunwayWrapper
 from tests.base_test import BaseFeatureTest
 
 
+class _FixedRng:
+    """Deterministic stand-in for `np.random.Generator` — pins the exact
+    interval/duration draws `closure_process` makes so a test can assert on
+    precise timing instead of "eventually, in some seed-dependent window"."""
+
+    def __init__(self, exponential_values):
+        self._exponential_values = list(exponential_values)
+
+    def exponential(self, _mean):
+        return self._exponential_values.pop(0)
+
+    def choice(self, options, p=None):  # noqa: ARG002 - signature match only
+        return options[0]
+
+    def integers(self, _n):
+        return 0
+
+
 @pytest.mark.django_db
 def test_closure_process_flips_db_status_and_records_ordered_events():
     helper = BaseFeatureTest()
@@ -239,3 +257,81 @@ def test_closure_process_only_picks_named_closed_reasons_and_reopen_references_t
         SimulationRunway.OperationalStatus.AVAILABLE,
         *CLOSURE_REASON_LABELS.keys(),
     )
+
+
+@pytest.mark.django_db
+def test_closure_process_waits_for_an_occupied_runway_to_vacate_before_closing():
+    helper = BaseFeatureTest()
+    simulation = helper.create_simulations(1)
+    runway = helper.create_runways(1)[0]
+    simulation_runway = helper.create_simulation_runway(
+        simulation=simulation, runway=runway
+    )
+
+    env = simpy.Environment()
+    wrapper = SimulationRunwayWrapper(env, simulation_runway)
+    base_time = timezone.now()
+
+    def to_datetime(now):
+        return base_time + timedelta(minutes=float(now))
+
+    VACATE_AT = 50
+
+    def occupier():
+        # Simulates an aircraft that won the runway before the closure
+        # interval elapsed and is still landing/taking off on it.
+        wrapper.mark_occupied()
+        yield env.timeout(VACATE_AT)
+        wrapper.mark_vacated()
+
+    env.process(occupier())
+    # First exponential() draw (the closure interval) fires at t=5 — long
+    # before the aircraft above vacates the runway at t=50.
+    rng = _FixedRng([5.0, 12.0])
+    env.process(closure_process(env, rng, simulation_runway, wrapper, to_datetime))
+
+    env.run(until=VACATE_AT - 1)
+    assert not SimulationRunwayEvent.objects.filter(
+        simulation_runway=simulation_runway,
+        event_type=SimulationRunwayEvent.EventType.CLOSED,
+    ).exists()
+    assert wrapper.closed is False
+
+    env.run(until=VACATE_AT + 1)
+    closed_event = SimulationRunwayEvent.objects.get(
+        simulation_runway=simulation_runway,
+        event_type=SimulationRunwayEvent.EventType.CLOSED,
+    )
+    # The closure only actually takes effect once the runway is clear, not at
+    # the originally-due interval (t=5).
+    assert closed_event.occurred_at == to_datetime(VACATE_AT)
+    assert wrapper.closed is True
+
+
+@pytest.mark.django_db
+def test_closure_process_closes_immediately_when_the_runway_is_not_occupied():
+    helper = BaseFeatureTest()
+    simulation = helper.create_simulations(1)
+    runway = helper.create_runways(1)[0]
+    simulation_runway = helper.create_simulation_runway(
+        simulation=simulation, runway=runway
+    )
+
+    env = simpy.Environment()
+    wrapper = SimulationRunwayWrapper(env, simulation_runway)
+    base_time = timezone.now()
+
+    def to_datetime(now):
+        return base_time + timedelta(minutes=float(now))
+
+    rng = _FixedRng([5.0, 12.0])
+    env.process(closure_process(env, rng, simulation_runway, wrapper, to_datetime))
+
+    env.run(until=6)
+
+    closed_event = SimulationRunwayEvent.objects.get(
+        simulation_runway=simulation_runway,
+        event_type=SimulationRunwayEvent.EventType.CLOSED,
+    )
+    assert closed_event.occurred_at == to_datetime(5.0)
+    assert wrapper.closed is True

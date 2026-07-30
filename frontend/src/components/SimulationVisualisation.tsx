@@ -135,7 +135,18 @@ export default function SimulationVisualisation() {
 
   const jumpToTime = useCallback(
     (t: number) => {
+      // Scrubbing while playing raced the autoplay tick loop for ownership of
+      // `currentTime`: both the drag's `onChange` and the tick's own
+      // `setTimeout` called `setCurrentTime`, so whichever fired last "won"
+      // on any given render, leaving the clock stuck wherever the tick loop
+      // happened to land after the drag — while the runway animation (driven
+      // separately, off wall-clock time via `getSmoothTime`) kept extrapolating
+      // as if still playing, and the play/pause button never got a state
+      // change to reflect since `isPlaying` itself was never touched. Pausing
+      // here removes the second writer entirely, matching how scrubbing
+      // behaves in most media players.
       clearScheduledTick();
+      setIsPlaying(false);
       setCurrentTime(Math.max(0, Math.min(t, data?.durationMinutes ?? t)));
     },
     [clearScheduledTick, data],

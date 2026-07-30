@@ -20,8 +20,11 @@ def closure_process(
 
     On a `rng.exponential`-timed interval (its mean scaled by
     `constants.WEATHER_CLOSURE_INTERVAL_MULTIPLIER[weather_condition]` — worse
-    weather means a shorter mean interval, i.e. more frequent closures):
-    flips the runway to a closed reason chosen with
+    weather means a shorter mean interval, i.e. more frequent closures): once
+    due, waits for any aircraft currently mid-operation on the runway
+    (`wrapper.occupied`) to land/take off — a closure should never cut a
+    landing/take-off short, only take effect once the runway is physically
+    clear — then flips the runway to a closed reason chosen with
     `constants.WEATHER_CLOSURE_REASON_WEIGHTS[weather_condition]` odds (e.g.
     Snow weather all but always closes for SnowClearance), writes a
     `SimulationRunwayEvent(Closed)` naming that reason, interrupts any
@@ -42,6 +45,13 @@ def closure_process(
     while True:
         interval = rng.exponential(mean_interval)
         yield env.timeout(interval)
+
+        # Don't cut a landing/take-off short: let whatever aircraft is
+        # currently on the runway finish before the closure actually takes
+        # effect. Re-checked in a loop since another aircraft can win the
+        # resource in the same instant the previous one releases it.
+        while wrapper.occupied:
+            yield wrapper.vacated_event
 
         if reason_probabilities is not None:
             status = str(rng.choice(closed_statuses, p=reason_probabilities))
