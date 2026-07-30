@@ -1,4 +1,4 @@
-from api.models import SimulationRunway, SimulationRunwayEvent
+from api.models import Simulation, SimulationRunway, SimulationRunwayEvent
 from api.simulation import constants
 
 # Random closures pick one of these named reasons (never `AVAILABLE` — that's
@@ -11,23 +11,42 @@ CLOSURE_REASON_LABELS = {
 }
 
 
-def closure_process(env, rng, simulation_runway, wrapper, to_datetime):
+def closure_process(
+    env, rng, simulation_runway, wrapper, to_datetime,
+    weather_condition=Simulation.WeatherCondition.CLEAR,
+):
     """Runs for the lifetime of the run for a single (open) runway, only ever
     scheduled when `Simulation.include_closures` is True.
 
-    On a `rng.exponential`-timed interval: flips the runway to a randomly
-    chosen closed reason, writes a `SimulationRunwayEvent(Closed)` naming that
-    reason, interrupts any aircraft still queued for it (via `wrapper.close()`
-    — never one already mid-operation), holds for a random duration, then
-    reopens + writes a `Reopened` event referencing the same reason.
+    On a `rng.exponential`-timed interval (its mean scaled by
+    `constants.WEATHER_CLOSURE_INTERVAL_MULTIPLIER[weather_condition]` — worse
+    weather means a shorter mean interval, i.e. more frequent closures):
+    flips the runway to a closed reason chosen with
+    `constants.WEATHER_CLOSURE_REASON_WEIGHTS[weather_condition]` odds (e.g.
+    Snow weather all but always closes for SnowClearance), writes a
+    `SimulationRunwayEvent(Closed)` naming that reason, interrupts any
+    aircraft still queued for it (via `wrapper.close()` — never one already
+    mid-operation), holds for a random duration, then reopens + writes a
+    `Reopened` event referencing the same reason.
     """
     closed_statuses = list(CLOSURE_REASON_LABELS.keys())
+    reason_weights = constants.WEATHER_CLOSURE_REASON_WEIGHTS.get(weather_condition, {})
+    weight_values = [reason_weights.get(status, 1) for status in closed_statuses]
+    total_weight = sum(weight_values)
+    reason_probabilities = (
+        [weight / total_weight for weight in weight_values] if total_weight > 0 else None
+    )
+    interval_multiplier = constants.WEATHER_CLOSURE_INTERVAL_MULTIPLIER.get(weather_condition, 1.0)
+    mean_interval = constants.CLOSURE_MEAN_INTERVAL_MINUTES * interval_multiplier
 
     while True:
-        interval = rng.exponential(constants.CLOSURE_MEAN_INTERVAL_MINUTES)
+        interval = rng.exponential(mean_interval)
         yield env.timeout(interval)
 
-        status = closed_statuses[rng.integers(len(closed_statuses))]
+        if reason_probabilities is not None:
+            status = str(rng.choice(closed_statuses, p=reason_probabilities))
+        else:
+            status = closed_statuses[rng.integers(len(closed_statuses))]
         label = CLOSURE_REASON_LABELS[status]
 
         wrapper.close()

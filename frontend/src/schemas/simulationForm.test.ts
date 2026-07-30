@@ -178,6 +178,22 @@ describe('simulationFormSchema', () => {
     );
     expect(result.success).toBe(false);
   });
+
+  it.each(['Clear', 'Windy', 'Snow', 'LowVisibility'] as const)(
+    'accepts weatherCondition %s',
+    (weatherCondition) => {
+      expect(simulationFormSchema.safeParse(validFormValues({ weatherCondition })).success).toBe(
+        true,
+      );
+    },
+  );
+
+  it('rejects an unknown weatherCondition', () => {
+    const result = simulationFormSchema.safeParse(
+      validFormValues({ weatherCondition: 'Hurricane' as never }),
+    );
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('sweepFormSchema', () => {
@@ -254,6 +270,11 @@ describe('toCreateSimulationRequest', () => {
     expect(request.mediumPercentage).toBe(60);
     expect(request.lightPercentage).toBe(20);
   });
+
+  it('always includes the weather condition (unlike seed/mix, it has no "unset" state)', () => {
+    const request = toCreateSimulationRequest(validFormValues({ weatherCondition: 'Snow' }));
+    expect(request.weatherCondition).toBe('Snow');
+  });
 });
 
 describe('toCreateSweepRequest', () => {
@@ -285,6 +306,7 @@ describe('configToFormValues', () => {
     heavyPercentage: 20,
     mediumPercentage: 60,
     lightPercentage: 20,
+    weatherCondition: 'Snow',
     runways: [
       { runwayId: 1, operatingMode: 'Mixed', operationalStatus: 'Available' },
       { runwayId: 2, operatingMode: 'ArrivalsOnly' },
@@ -308,6 +330,10 @@ describe('configToFormValues', () => {
     expect(values.mediumPercentage).toBe(60);
     expect(values.lightPercentage).toBe(20);
   });
+
+  it('carries the weather condition through so a duplicate pre-fills it', () => {
+    expect(configToFormValues(sampleConfig).weatherCondition).toBe('Snow');
+  });
 });
 
 describe('detailToRerunRequest', () => {
@@ -325,6 +351,7 @@ describe('detailToRerunRequest', () => {
     heavyPercentage: null,
     mediumPercentage: null,
     lightPercentage: null,
+    weatherCondition: 'Windy',
     createdAt: '2026-01-01T00:00:00Z',
     startedAt: '2026-01-01T00:00:05Z',
     completedAt: '2026-01-01T00:10:00Z',
@@ -393,5 +420,9 @@ describe('detailToRerunRequest', () => {
     expect(request.heavyPercentage).toBe(30);
     expect(request.mediumPercentage).toBe(50);
     expect(request.lightPercentage).toBe(20);
+  });
+
+  it('carries the weather condition through', () => {
+    expect(detailToRerunRequest(sampleDetail).weatherCondition).toBe('Windy');
   });
 });

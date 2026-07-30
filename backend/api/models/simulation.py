@@ -15,6 +15,12 @@ class Simulation(models.Model):
     # Statuses a run can no longer leave — nothing more will run for it.
     TERMINAL_STATUSES = (Status.COMPLETE, Status.ERROR, Status.CANCELLED)
 
+    class WeatherCondition(models.TextChoices):
+        CLEAR = "Clear", "Clear (VMC)"
+        WINDY = "Windy", "Windy"
+        SNOW = "Snow", "Snow"
+        LOW_VISIBILITY = "LowVisibility", "Low Visibility (IMC)"
+
     name = models.CharField(max_length=255)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
@@ -31,6 +37,14 @@ class Simulation(models.Model):
     aircraft_speed_knots = models.PositiveIntegerField()
     include_closures = models.BooleanField(default=False)
     random_seed = models.IntegerField(null=True, blank=True)
+    # Scales runway-operation time, wake-separation minima, and (when
+    # include_closures is on) closure frequency/reason mix — see
+    # constants.WEATHER_OPERATION_MULTIPLIER et al. Clear is the neutral
+    # baseline (1.0x everywhere, matching engine behaviour before this field
+    # existed).
+    weather_condition = models.CharField(
+        max_length=16, choices=WeatherCondition.choices, default=WeatherCondition.CLEAR
+    )
     # Optional override of the engine's default Heavy/Medium/Light traffic mix
     # (see constants.DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES). All three null (the
     # default) means "use the engine's built-in mix"; the creation DTO

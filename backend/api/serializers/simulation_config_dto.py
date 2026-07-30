@@ -28,6 +28,7 @@ class SimulationConfigDto(serializers.ModelSerializer):
             "heavy_percentage",
             "medium_percentage",
             "light_percentage",
+            "weather_condition",
             "runways",
         ]
 

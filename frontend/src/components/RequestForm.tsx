@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
 import { SelectButton } from 'primereact/selectbutton';
+import { Dropdown } from 'primereact/dropdown';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { usePost } from '../functions/axios';
@@ -12,6 +13,7 @@ import {
   defaultSimulationFormValues,
   simulationFormSchema,
   toCreateSimulationRequest,
+  WEATHER_CONDITION_OPTIONS,
   type SimulationFormValues,
 } from '../schemas/simulationForm';
 import type { CreateSimulationRequest, Simulation } from '../types/simulation';
@@ -240,7 +242,26 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="weatherCondition" className="min-h-10 text-sm font-bold text-slate-800">
+            Weather {REQUIRED_MARK}
+          </label>
+          <Controller
+            name="weatherCondition"
+            control={control}
+            render={({ field }) => (
+              <Dropdown
+                inputId="weatherCondition"
+                value={field.value}
+                options={WEATHER_CONDITION_OPTIONS}
+                onChange={(e) => field.onChange(e.value)}
+                className="w-full"
+              />
+            )}
+          />
+        </div>
+
         <div className="flex flex-col gap-1">
           <label htmlFor="heavyPercentage" className="min-h-10 text-sm font-bold text-slate-800">
             Heavy Aircraft % (optional)
@@ -311,9 +332,9 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
 
         {errors.heavyPercentage && (
-          <small className="text-red-600 sm:col-span-3">{errors.heavyPercentage.message}</small>
+          <small className="text-red-600 sm:col-span-4">{errors.heavyPercentage.message}</small>
         )}
-        <small className="text-slate-500 sm:col-span-3">
+        <small className="text-slate-500 sm:col-span-4">
           Leave all three blank to use the default Heavy/Medium/Light traffic mix; set all three
           together (summing to 100%) to override it.
         </small>

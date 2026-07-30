@@ -1,7 +1,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
-from api.models import SimulationBatch
+from api.models import Simulation, SimulationBatch
 from api.serializers.simulation_creation_dto import NAME_PATTERN, SimulationCreationDto
 from api.serializers.simulation_runway_creation_dto import SimulationRunwayCreationDto
 
@@ -57,6 +57,11 @@ class SimulationSweepCreationDto(serializers.Serializer):
     )
     light_percentage = serializers.IntegerField(
         required=False, allow_null=True, min_value=0, max_value=100
+    )
+    weather_condition = serializers.ChoiceField(
+        choices=Simulation.WeatherCondition.choices,
+        required=False,
+        default=Simulation.WeatherCondition.CLEAR,
     )
     runways = SimulationRunwayCreationDto(many=True)
     variable = serializers.ChoiceField(choices=list(SWEEPABLE_VARIABLES))

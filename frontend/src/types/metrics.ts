@@ -1,4 +1,4 @@
-import type { SimulationStatus, SweepVariable } from './simulation';
+import type { SimulationStatus, SweepVariable, WeatherCondition } from './simulation';
 import type { OperatingMode, OperationalStatus } from './runway';
 
 export interface OutcomeCounts {
@@ -76,6 +76,7 @@ export interface SimulationDetail {
   heavyPercentage: number | null;
   mediumPercentage: number | null;
   lightPercentage: number | null;
+  weatherCondition: WeatherCondition;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;

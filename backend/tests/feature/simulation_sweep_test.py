@@ -156,6 +156,22 @@ class SimulationSweepTest(BaseFeatureTest):
         }
         self.assertEqual(mixes, {(20, 60, 20)})
 
+    def test_sweep_applies_the_same_weather_condition_to_every_generated_run(self):
+        response = self.client.post(
+            reverse("simulation-sweep"),
+            self._payload(weatherCondition="Windy"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        body = response.json()
+        conditions = {
+            s.weather_condition
+            for s in Simulation.objects.filter(
+                id__in=[s["id"] for s in body["simulations"]]
+            )
+        }
+        self.assertEqual(conditions, {"Windy"})
+
     def test_sweep_rejects_a_weight_class_mix_not_summing_to_100(self):
         payload = self._payload(
             heavyPercentage=20, mediumPercentage=60, lightPercentage=30

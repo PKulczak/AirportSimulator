@@ -1,4 +1,5 @@
 import type { SimulationDetail } from '../types/metrics';
+import { WEATHER_CONDITION_OPTIONS } from '../schemas/simulationForm';
 
 interface MetricsSimVariablesProps {
   detail: SimulationDetail;
@@ -15,6 +16,12 @@ export default function MetricsSimVariables({ detail, className }: MetricsSimVar
     { label: 'Maximum Wait Time', value: `${detail.maxWaitMinutes} mins` },
     { label: 'Aircraft Speed', value: `${detail.aircraftSpeedKnots} kts` },
     { label: 'Closures Included?', value: detail.includeClosures ? 'Yes' : 'No' },
+    {
+      label: 'Weather',
+      value:
+        WEATHER_CONDITION_OPTIONS.find((option) => option.value === detail.weatherCondition)
+          ?.label ?? detail.weatherCondition,
+    },
     { label: 'Random Seed', value: detail.randomSeed != null ? String(detail.randomSeed) : 'Random' },
   ];
 

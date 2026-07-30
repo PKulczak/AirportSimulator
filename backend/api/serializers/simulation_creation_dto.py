@@ -67,6 +67,7 @@ class SimulationCreationDto(serializers.ModelSerializer):
             "heavy_percentage",
             "medium_percentage",
             "light_percentage",
+            "weather_condition",
             "runways",
             "created_at",
         ]

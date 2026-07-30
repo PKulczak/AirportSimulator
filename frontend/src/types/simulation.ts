@@ -2,6 +2,12 @@ import type { SimulationRunwayConfig } from './runway';
 
 export type SimulationStatus = 'Pending' | 'Running' | 'Complete' | 'Error' | 'Cancelled';
 
+/** Scales runway-operation time, wake-separation minima, and (when closures
+ * are enabled) closure frequency/reason mix — see the backend's
+ * `constants.WEATHER_OPERATION_MULTIPLIER` et al. `Clear` is the neutral
+ * baseline. */
+export type WeatherCondition = 'Clear' | 'Windy' | 'Snow' | 'LowVisibility';
+
 /** Aggregate info for a batch/sweep, carried on its representative row in the
  * history list (GET /api/simulations/ collapses a batch's N runs down to
  * one). `rangeMin`/`rangeMax` are the swept variable's bounds across every
@@ -53,6 +59,7 @@ export interface SimulationConfig {
   heavyPercentage: number | null;
   mediumPercentage: number | null;
   lightPercentage: number | null;
+  weatherCondition: WeatherCondition;
   runways: SimulationRunwayConfig[];
 }
 
@@ -72,6 +79,8 @@ export interface CreateSimulationRequest {
   heavyPercentage?: number;
   mediumPercentage?: number;
   lightPercentage?: number;
+  /** Omit to use the server's default (Clear). */
+  weatherCondition?: WeatherCondition;
   runways: SimulationRunwayConfig[];
 }
 

@@ -141,9 +141,15 @@ class SimulationRunner:
 
         if simulation.include_closures:
             for sr, wrapper in zip(simulation_runways, wrappers):
-                env.process(closure_process(env, rng, sr, wrapper, to_datetime))
+                env.process(
+                    closure_process(
+                        env, rng, sr, wrapper, to_datetime, simulation.weather_condition
+                    )
+                )
 
-        operation_minutes = self._operation_minutes(simulation.aircraft_speed_knots)
+        operation_minutes = self._operation_minutes(
+            simulation.aircraft_speed_knots, simulation.weather_condition
+        )
 
         for aircraft, offset in aircraft_entries:
             self._spawn_aircraft_process(
@@ -186,29 +192,40 @@ class SimulationRunner:
             simulation.save(update_fields=["last_heartbeat_at"])
 
     @staticmethod
-    def _wake_separation_extra_minutes(wrapper, trailing_weight_class, now):
+    def _wake_separation_extra_minutes(
+        wrapper, trailing_weight_class, now, weather_condition=Simulation.WeatherCondition.CLEAR,
+    ):
         """Extra minutes the trailing operation must wait on top of its own
         base occupancy time, so the gap since the *leading* operation ended
         is at least `constants.WAKE_SEPARATION_EXTRA_MINUTES[(leading,
-        trailing)]`. Zero when this is the runway's first operation (no
-        leading class yet), when the pair needs no extra separation, or when
-        enough sim-time has already elapsed since the leading operation ended
-        (e.g. the runway sat idle waiting for the next request)."""
+        trailing)]` scaled by `WEATHER_SEPARATION_MULTIPLIER[weather_condition]`.
+        Zero when this is the runway's first operation (no leading class
+        yet), when the pair needs no extra separation, or when enough
+        sim-time has already elapsed since the leading operation ended (e.g.
+        the runway sat idle waiting for the next request)."""
         leading_weight_class = wrapper.last_operation_class
         if leading_weight_class is None:
             return 0.0
-        required_gap = constants.WAKE_SEPARATION_EXTRA_MINUTES.get(
+        base_required_gap = constants.WAKE_SEPARATION_EXTRA_MINUTES.get(
             (leading_weight_class, trailing_weight_class), 0.0
+        )
+        required_gap = base_required_gap * constants.WEATHER_SEPARATION_MULTIPLIER.get(
+            weather_condition, 1.0
         )
         elapsed_since_last = now - wrapper.last_operation_end_time
         return max(0.0, required_gap - elapsed_since_last)
 
     @staticmethod
-    def _operation_minutes(aircraft_speed_knots):
+    def _operation_minutes(
+        aircraft_speed_knots, weather_condition=Simulation.WeatherCondition.CLEAR,
+    ):
+        weather_multiplier = constants.WEATHER_OPERATION_MULTIPLIER.get(weather_condition, 1.0)
         if not aircraft_speed_knots:
-            return constants.REFERENCE_OPERATION_MINUTES
-        scaled = constants.REFERENCE_OPERATION_MINUTES * (
-            constants.REFERENCE_SPEED_KNOTS / float(aircraft_speed_knots)
+            return constants.REFERENCE_OPERATION_MINUTES * weather_multiplier
+        scaled = (
+            constants.REFERENCE_OPERATION_MINUTES
+            * (constants.REFERENCE_SPEED_KNOTS / float(aircraft_speed_knots))
+            * weather_multiplier
         )
         return max(constants.MIN_OPERATION_MINUTES, scaled)
 
@@ -361,7 +378,7 @@ class SimulationRunner:
         )
 
         total_operation_minutes = operation_minutes + self._wake_separation_extra_minutes(
-            won_wrapper, aircraft.weight_class, env.now
+            won_wrapper, aircraft.weight_class, env.now, simulation.weather_condition
         )
 
         try:

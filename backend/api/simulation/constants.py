@@ -91,6 +91,54 @@ CLOSURE_MEAN_INTERVAL_MINUTES = 45.0
 CLOSURE_MEAN_DURATION_MINUTES = 12.0
 CLOSURE_MIN_DURATION_MINUTES = 3.0
 
+# --- Weather (Simulation.weather_condition) ---
+# None of these are aviation-accurate distance/visibility models — each is a
+# flat multiplier/weighting approximating how much worse a condition makes
+# things relative to Clear (VMC), consistent with how every other constant in
+# this file already abstracts real-world rules into simple figures.
+
+# Multiplies the base (speed-scaled) runway-occupancy time — worse weather
+# means every operation takes longer, lowering achievable throughput.
+WEATHER_OPERATION_MULTIPLIER = {
+    "Clear": 1.0,
+    "Windy": 1.15,
+    "Snow": 1.4,
+    "LowVisibility": 1.6,
+}
+
+# Multiplies each WAKE_SEPARATION_EXTRA_MINUTES value — degraded conditions
+# widen the minima an aircraft must keep behind a heavier one.
+WEATHER_SEPARATION_MULTIPLIER = {
+    "Clear": 1.0,
+    "Windy": 1.2,
+    "Snow": 1.5,
+    "LowVisibility": 1.75,
+}
+
+# Multiplies CLOSURE_MEAN_INTERVAL_MINUTES; below 1.0 means closures fire more
+# often than in Clear weather (a shorter mean interval between them). Only
+# relevant when Simulation.include_closures is enabled.
+WEATHER_CLOSURE_INTERVAL_MULTIPLIER = {
+    "Clear": 1.0,
+    "Windy": 0.7,
+    "Snow": 0.35,
+    "LowVisibility": 0.5,
+}
+
+# Relative likelihood (rng.choice weights, needn't sum to anything specific)
+# of each closure reason firing under each weather condition — ties weather
+# into the existing SnowClearance/RunwayInspection reasons rather than
+# treating closures as weather-agnostic: Snow all but guarantees a
+# SnowClearance closure and never an equipment-only one caused by weather;
+# LowVisibility favours RunwayInspection (checking approach aids); Clear/Windy
+# never close for snow at all.
+WEATHER_CLOSURE_REASON_WEIGHTS = {
+    "Clear": {"RunwayInspection": 1, "SnowClearance": 0, "EquipmentFailure": 1},
+    "Windy": {"RunwayInspection": 1, "SnowClearance": 0, "EquipmentFailure": 2},
+    "Snow": {"RunwayInspection": 1, "SnowClearance": 6, "EquipmentFailure": 1},
+    "LowVisibility": {"RunwayInspection": 3, "SnowClearance": 0, "EquipmentFailure": 1},
+}
+
 # --- Cancellation ---
 # How often (in sim-minutes) the runner re-reads Simulation.cancel_requested
 # from the DB to decide whether to abort. Small enough to stay responsive on a

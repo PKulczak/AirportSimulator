@@ -142,3 +142,16 @@ class SimulationConfigTest(BaseFeatureTest):
         self.assertEqual(body["heavyPercentage"], 30)
         self.assertEqual(body["mediumPercentage"], 50)
         self.assertEqual(body["lightPercentage"], 20)
+
+    def test_config_exposes_a_custom_weather_condition(self):
+        create = self.client.post(
+            "/api/simulations/",
+            self._create_payload(weatherCondition="LowVisibility"),
+            format="json",
+        )
+        self.assertEqual(create.status_code, status.HTTP_201_CREATED, create.content)
+        sim_id = create.json()["id"]
+
+        response = self.client.get(_config_url(sim_id))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["weatherCondition"], "LowVisibility")

@@ -363,3 +363,24 @@ class SimulationCreationTest(BaseFeatureTest):
         )
         response = self.client.post(reverse("simulation-list"), payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_simulation_accepts_and_persists_weather_condition(self):
+        payload = self._payload(weatherCondition="Snow")
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        simulation = Simulation.objects.get(id=response.json()["id"])
+        self.assertEqual(simulation.weather_condition, "Snow")
+
+    def test_create_simulation_defaults_weather_condition_to_clear_when_omitted(self):
+        response = self.client.post(
+            reverse("simulation-list"), self._payload(), format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        simulation = Simulation.objects.get(id=response.json()["id"])
+        self.assertEqual(simulation.weather_condition, Simulation.WeatherCondition.CLEAR)
+
+    def test_create_simulation_rejects_an_unknown_weather_condition(self):
+        payload = self._payload(weatherCondition="Hurricane")
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("weatherCondition", response.json())

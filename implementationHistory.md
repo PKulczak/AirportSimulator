@@ -26,6 +26,145 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Slice 7.2 — Weather as a scenario parameter
+
+**Slice:** 7.2 — Weather as a scenario parameter (Epic 7, Engine fidelity)
+**Status:** Done (code + tests + live-verified against the real dev DB/queue)
+
+**Engine**
+- [backend/api/models/simulation.py](backend/api/models/simulation.py) — new
+  `Simulation.WeatherCondition` (Clear (VMC) / Windy / Snow / Low Visibility (IMC)) and a
+  `weather_condition` field, defaulting to Clear — the neutral baseline (1.0x everywhere),
+  matching engine behaviour exactly as it was before this field existed.
+  [backend/api/migrations/0011_simulation_weather_condition.py](backend/api/migrations/0011_simulation_weather_condition.py)
+  (new, applied to the dev DB).
+- [backend/api/simulation/constants.py](backend/api/simulation/constants.py) — added
+  `WEATHER_OPERATION_MULTIPLIER` (scales base runway-occupancy time),
+  `WEATHER_SEPARATION_MULTIPLIER` (scales each `WAKE_SEPARATION_EXTRA_MINUTES` value from
+  Slice 7.1), `WEATHER_CLOSURE_INTERVAL_MULTIPLIER` (scales `CLOSURE_MEAN_INTERVAL_MINUTES`
+  — below 1.0 means more frequent closures), and `WEATHER_CLOSURE_REASON_WEIGHTS` (per-
+  weather `rng.choice` weights over the existing SnowClearance/RunwayInspection/
+  EquipmentFailure reasons — the slice's explicit "ties into existing ... reasons" ask: Snow
+  weather is heavily weighted toward SnowClearance, LowVisibility toward RunwayInspection,
+  Clear/Windy never produce a snow closure at all). None of these are aviation-accurate
+  distance/visibility models — flat multipliers, consistent with how every other constant in
+  this file already abstracts real-world rules into simple figures.
+- [backend/api/simulation/simulation_runner.py](backend/api/simulation/simulation_runner.py)
+  — `_operation_minutes(aircraft_speed_knots, weather_condition=Clear)` and
+  `_wake_separation_extra_minutes(wrapper, trailing_class, now, weather_condition=Clear)`
+  both gained a `weather_condition` parameter (defaulted to Clear so Slice 7.1's existing
+  direct unit-test call sites — which don't pass one — keep testing the same 1.0x-multiplier
+  baseline unchanged) that scales their respective outputs by the constants above; both real
+  call sites in `_execute`/`_aircraft_process_body` now pass `simulation.weather_condition`.
+- [backend/api/simulation/closures.py](backend/api/simulation/closures.py) —
+  `closure_process` gained the same defaulted `weather_condition` parameter (keeping the
+  three existing direct-call tests in `closures_test.py` valid unchanged): the mean interval
+  between closures is scaled by `WEATHER_CLOSURE_INTERVAL_MULTIPLIER`, and which reason gets
+  picked now uses `rng.choice` weighted by `WEATHER_CLOSURE_REASON_WEIGHTS` instead of a flat
+  uniform pick — falls back to uniform weighting for an unrecognized condition value.
+
+**API / config**
+- [backend/api/serializers/simulation_creation_dto.py](backend/api/serializers/simulation_creation_dto.py),
+  [simulation_config_dto.py](backend/api/serializers/simulation_config_dto.py),
+  [simulation_detail_dto.py](backend/api/serializers/simulation_detail_dto.py) — added
+  `weather_condition` to each DTO's field list; the creation DTO needed no explicit field
+  override (unlike `random_seed`'s bounds) since `ModelSerializer` auto-derives
+  `required=False`/the Clear default straight from the model field, the same way
+  `include_closures` already works. Config/detail exposure means Duplicate (Slice 2.3) and
+  re-run-with-same-seed (Slice 3.2) both reproduce the same weather, not silently reverting
+  to Clear.
+- [backend/api/serializers/simulation_sweep_creation_dto.py](backend/api/serializers/simulation_sweep_creation_dto.py)
+  — explicit `ChoiceField` (sweep DTOs are plain `Serializer`s, not `ModelSerializer`s, so
+  there's no model default to inherit from) passed through to every generated run.
+
+**Frontend**
+- [frontend/src/types/simulation.ts](frontend/src/types/simulation.ts) — new
+  `WeatherCondition` type; `weatherCondition` on `SimulationConfig` (always present) and
+  `CreateSimulationRequest` (optional — omit for the server's Clear default).
+  [types/metrics.ts](frontend/src/types/metrics.ts) — same field on `SimulationDetail`.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) — new
+  `weatherConditionSchema`/`WEATHER_CONDITION_OPTIONS`; `weatherCondition` added to the
+  shared base schema (defaulting to `'Clear'`, always present — unlike the seed/weight-mix
+  fields, weather has no "unset" state to model as null); `toCreateSimulationRequest`/
+  `detailToRerunRequest`/`configToFormValues` all carry it straight through unconditionally.
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — a
+  required "Weather" `Dropdown` added to the same row as the Slice 7.1 weight-class-mix
+  inputs (now a 4-column row: Weather, Heavy%, Medium%, Light%).
+- [frontend/src/components/MetricsSimVariables.tsx](frontend/src/components/MetricsSimVariables.tsx)
+  — a "Weather" row (using `WEATHER_CONDITION_OPTIONS` for the human-readable label) added
+  to the existing Sim Variables read-only panel, next to Closures Included/Random Seed.
+  **Not added to the replay** — the slice's own wording ("ENG/BE/FE: A weather setting...")
+  doesn't ask for a visualisation-page display the way Slice 7.1 explicitly asked to "show
+  class in the replay"; showing it once in Sim Variables (already the established spot for
+  every other whole-run config value) was judged sufficient.
+- **`SweepForm.tsx` UI left untouched** — same deliberate scope cut as Slice 7.1's weight-
+  class mix: the sweep DTO/schema fully validate and pass a fixed `weatherCondition` through
+  today, just with no UI input for it yet.
+
+**Verification**
+- New [backend/tests/simulation/weather_test.py](backend/tests/simulation/weather_test.py)
+  (11 tests): `_operation_minutes` strictly increases Clear < Windy < Snow < LowVisibility
+  and defaults to Clear when unspecified; `_wake_separation_extra_minutes` scales by the
+  weather multiplier and defaults to Clear; an isolated `closure_process` (same seed, only
+  weather differs) produces more closures under Snow than Clear; Snow's closures are
+  overwhelmingly ($>50\%$) SnowClearance while Clear never produces one; a full
+  `SimulationRunner().run()` comparison (same seed/config, `include_closures=False` so the
+  *only* weather-affected channel is operation/separation time — with closures off, every
+  rng draw the two runs make is otherwise identical, isolating the comparison cleanly) shows
+  strictly fewer successes under LowVisibility than Clear — the slice's own literal test.
+  Needed a second fix mid-writing: the two comparison runs in one test function each called
+  `helper.create_runways(1)` independently, colliding on the same default `"RW0"` identifier
+  within the shared test DB — fixed by giving each call an explicit unique identifier.
+- [backend/tests/feature/simulation_creation_test.py](backend/tests/feature/simulation_creation_test.py)
+  (+3), [simulation_config_test.py](backend/tests/feature/simulation_config_test.py) (+1),
+  [simulation_sweep_test.py](backend/tests/feature/simulation_sweep_test.py) (+1) — accepts/
+  persists a weather condition; defaults to Clear when omitted; rejects an unrecognized
+  value; config exposes a custom condition; sweep applies the same condition to every
+  generated run. **Full backend suite: 220 passed** (+14 net new, 220 vs the 206 Slice 7.1
+  left off at).
+- [frontend/src/schemas/simulationForm.test.ts](frontend/src/schemas/simulationForm.test.ts)
+  (+8): schema accepts every valid weather value and rejects an unknown one;
+  `toCreateSimulationRequest`/`detailToRerunRequest`/`configToFormValues` all carry the
+  condition through. `npm run test`: **46 passed** (+8). `npx tsc -b --noEmit`, `npm run
+  build`, and `npm run lint` all clean.
+- Live end-to-end against the real dev DB/queue: created two otherwise-identical runs (same
+  seed 123, same 1-runway/60-arrival/60-departure/60-min/8-min-max-wait config,
+  `includeClosures: false`) differing only in weather — Clear (sim 179) completed **13**
+  successes out of 120 aircraft; LowVisibility (sim 180) completed only **8** — confirming
+  "worse weather lowers throughput" on a real run through the actual dramatiq worker, not
+  just in an isolated test. Separately, two closures-enabled runs (same seed 7, same 2-
+  runway/240-min config) differing only in weather: Clear (sim 182) produced 12 closures
+  split 7 Runway-inspection/5 Equipment-failure with **zero** Snow-clearance; Snow (sim 181)
+  produced **17** closures (more frequent, as expected from the shorter mean interval), 10 of
+  them (~59%) Snow clearance — confirming both "raises closures" and "ties into existing
+  ... reasons" live. All four verification sims deleted by explicit id afterward.
+
+**Operational notes**
+- Restarted `runserver`/`rundramatiq`/`npm run dev` for this slice's engine + migration
+  changes. Checked for strays before restarting per CLAUDE.md and found a single clean tree
+  of each (no repeat of the Slice 7.1 session's stray-process incident). Used `TaskStop` on
+  the three tracked background tasks rather than a manual `taskkill` — but this **did not
+  fully tear down the frontend's process tree**: `TaskStop` reported success, yet the actual
+  `concurrently`/`vite`/`tsc --watch` processes were still alive and holding port 3000
+  afterward (confirmed via the same process-list check), an incident CLAUDE.md doesn't yet
+  document — stopping a tracked background task is not by itself sufficient proof its
+  process tree is gone; re-checked the process list after every stop/restart rather than
+  trusting the stop confirmation, found the survivors, and `taskkill //F //T`'d them
+  directly before starting the fresh instance. Confirmed a single clean tree of
+  `runserver`/`rundramatiq`/the frontend chain and zero Redis-broker connections before
+  starting exactly one fresh instance of each.
+
+**Notes**
+- `WEATHER_OPERATION_MULTIPLIER`/`WEATHER_SEPARATION_MULTIPLIER`/
+  `WEATHER_CLOSURE_INTERVAL_MULTIPLIER`/`WEATHER_CLOSURE_REASON_WEIGHTS` are illustrative
+  flat figures, not sourced from real aviation performance data — same caveat already
+  recorded for Slice 7.1's wake-separation matrix and default weight-class mix.
+  `weather_condition` is not itself a sweepable variable (`SWEEPABLE_VARIABLES` is unchanged)
+  — it's a fixed baseline for a sweep, same treatment as `include_closures`/`random_seed`.
+- Visibility/wind aren't modelled as continuous quantities (e.g. an actual METAR-style visual
+  range or wind speed) — four discrete named conditions, matching the slice's own "e.g.
+  VMC/IMC, wind, snow" phrasing rather than a finer-grained numeric model.
+
 ## 2026-07-30 — Slice 7.1 — Aircraft weight classes + wake separation
 
 **Slice:** 7.1 — Aircraft weight classes + wake separation (Epic 7, Engine fidelity)

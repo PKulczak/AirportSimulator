@@ -35,6 +35,7 @@ class SimulationDetailDto(serializers.ModelSerializer):
             "heavy_percentage",
             "medium_percentage",
             "light_percentage",
+            "weather_condition",
             "started_at",
             "completed_at",
             "created_at",

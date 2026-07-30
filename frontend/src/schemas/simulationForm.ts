@@ -4,6 +4,7 @@ import type {
   CreateSweepRequest,
   SimulationConfig,
   SweepVariable,
+  WeatherCondition,
 } from '../types/simulation';
 import type { SimulationDetail } from '../types/metrics';
 import type { OperatingMode, OperationalStatus } from '../types/runway';
@@ -16,6 +17,15 @@ export const operationalStatusSchema = z.enum([
   'SnowClearance',
   'EquipmentFailure',
 ]);
+
+export const weatherConditionSchema = z.enum(['Clear', 'Windy', 'Snow', 'LowVisibility']);
+
+export const WEATHER_CONDITION_OPTIONS: { label: string; value: WeatherCondition }[] = [
+  { label: 'Clear (VMC)', value: 'Clear' },
+  { label: 'Windy', value: 'Windy' },
+  { label: 'Snow', value: 'Snow' },
+  { label: 'Low Visibility (IMC)', value: 'LowVisibility' },
+];
 
 /** Mirrors the backend's `SimulationCreationDto.MAX_RUNWAYS` cap. */
 export const MAX_RUNWAYS = 10;
@@ -79,6 +89,7 @@ const simulationFormBaseSchema = z
     heavyPercentage: z.number().min(0, 'Must be zero or greater').max(100, 'Must be 100 or fewer').nullable(),
     mediumPercentage: z.number().min(0, 'Must be zero or greater').max(100, 'Must be 100 or fewer').nullable(),
     lightPercentage: z.number().min(0, 'Must be zero or greater').max(100, 'Must be 100 or fewer').nullable(),
+    weatherCondition: weatherConditionSchema,
     runwayIds: z
       .array(z.number())
       .min(1, 'Select at least one runway')
@@ -212,6 +223,7 @@ export const defaultSimulationFormValues: SimulationFormValues = {
   heavyPercentage: null,
   mediumPercentage: null,
   lightPercentage: null,
+  weatherCondition: 'Clear',
   runwayIds: [],
   runwayModes: {},
   runwayInitialStatus: {},
@@ -310,6 +322,7 @@ export function configToFormValues(config: SimulationConfig): SimulationFormValu
     heavyPercentage: config.heavyPercentage,
     mediumPercentage: config.mediumPercentage,
     lightPercentage: config.lightPercentage,
+    weatherCondition: config.weatherCondition,
     runwayIds: config.runways.map((runway) => runway.runwayId),
     runwayModes,
     runwayInitialStatus,
@@ -326,6 +339,7 @@ export function toCreateSimulationRequest(
     durationMinutes: values.durationMinutes,
     maxWaitMinutes: values.maxWaitMinutes,
     includeClosures: values.includeClosures,
+    weatherCondition: values.weatherCondition,
     // Omit entirely when blank so the backend treats it as "no seed" (random).
     ...(values.randomSeed != null ? { randomSeed: values.randomSeed } : {}),
     // Validation guarantees all three or none are set — checking one is enough.
@@ -366,6 +380,7 @@ export function detailToRerunRequest(detail: SimulationDetail): CreateSimulation
     maxWaitMinutes: detail.maxWaitMinutes,
     aircraftSpeedKnots: detail.aircraftSpeedKnots,
     includeClosures: detail.includeClosures,
+    weatherCondition: detail.weatherCondition,
     ...(detail.randomSeed != null ? { randomSeed: detail.randomSeed } : {}),
     ...(detail.heavyPercentage != null
       ? {
