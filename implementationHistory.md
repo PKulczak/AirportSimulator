@@ -26,6 +26,96 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-29 — Slice 11.3 — Run heartbeat + auto-timeout
+
+**Slice:** 11.3 — Run heartbeat + auto-timeout (Epic 11, Dev-ex & reliability)
+**Status:** Done (code + tests + live-verified against the real dev DB/queue)
+
+**Model**
+- [backend/api/models/simulation.py](backend/api/models/simulation.py) — added
+  `last_heartbeat_at` (nullable `DateTimeField`). Deliberately a new field rather than
+  reusing the existing `updated_at` (`auto_now=True`): `updated_at` would silently reset
+  on any future unrelated mid-run field write, which would corrupt it as a liveness
+  signal — same "keep signals independent" reasoning `cancel_requested` already uses to
+  avoid racing with `status`. Migration `0009_simulation_last_heartbeat_at` (applied to
+  the dev DB).
+
+**Engine**
+- [backend/api/simulation/simulation_runner.py](backend/api/simulation/simulation_runner.py)
+  — `run()` now seeds `last_heartbeat_at = started_at` in the same save as the
+  Pending→Running transition, so every run that actually starts has a real reference
+  point even if its worker dies before the first periodic tick. The existing
+  `_cancellation_watchdog` SimPy process (renamed `_watchdog`) now also bumps
+  `last_heartbeat_at` to `timezone.now()` on every tick, alongside its existing
+  `cancel_requested` re-read — combined into one process rather than two, since a
+  cancel-check tick already proves the process is alive and progressing, so it's the
+  natural place to also record that liveness.
+- [backend/api/simulation/constants.py](backend/api/simulation/constants.py) — added
+  `STALLED_RUN_TIMEOUT_REAL_MINUTES = 30.0`, explicitly commented as **real/wall-clock**
+  minutes (every other constant in this file is sim-minutes) — generous relative to how
+  long a run actually takes in practice (~10s wall-clock even for a large run, per
+  CLAUDE.md's documented incidents) so a slow-but-genuinely-alive run is never mistaken
+  for a stalled one.
+
+**New: stale-run watchdog command**
+- [backend/api/management/commands/check_stalled_simulations.py](backend/api/management/commands/check_stalled_simulations.py)
+  (new) — marks any `Running` simulation whose `last_heartbeat_at` is older than
+  `STALLED_RUN_TIMEOUT_REAL_MINUTES` as `Error` (with a descriptive `error_message`),
+  publishing the status change over the websocket same as every other transition. Falls
+  back to `started_at` for the (shouldn't-normally-happen) case of a `Running` row with no
+  heartbeat at all, e.g. pre-existing data from before this field existed — a `Running`
+  row with neither is left alone rather than guessed at. This command doesn't loop itself;
+  something external invokes it periodically (see docker-compose below, or cron/Task
+  Scheduler for the manual workflow).
+- [docker-compose.yml](docker-compose.yml) — added a `watchdog` service (reuses the
+  backend image) that loops `check_stalled_simulations` every 60s, so the Docker Compose
+  workflow from Slice 11.1 actually self-heals a dead/stray worker rather than requiring
+  someone to remember to run the command by hand.
+- [README.md](README.md), [CLAUDE.md](CLAUDE.md) — documented the command, the `watchdog`
+  Compose service, and (since it hadn't been written up before) Slice 11.2's CI pipeline.
+
+**Verification**
+- [backend/tests/simulation/simulation_runner_status_transitions_test.py](backend/tests/simulation/simulation_runner_status_transitions_test.py)
+  — 2 new tests: with the watchdog monkeypatched to a no-op, `last_heartbeat_at` still
+  equals the seeded value (isolates the seed-at-transition behaviour); on a real run long
+  enough to cross a `CANCELLATION_POLL_MINUTES` tick, `last_heartbeat_at` ends up strictly
+  later than `started_at` (proves the periodic bump actually fires).
+- [backend/tests/feature/check_stalled_simulations_test.py](backend/tests/feature/check_stalled_simulations_test.py)
+  (new, 5 tests): a stale `Running` row → `Error`; a recently-active one is left alone; a
+  non-`Running` row is ignored regardless of heartbeat age; a `Running` row with no
+  heartbeat falls back to a stale `started_at`; a `Running` row with neither is left alone
+  (not enough information to call it stale). **Full suite: 178 passed** (+7 total: 2
+  engine + 5 command).
+- Live end-to-end against the real dev DB/queue: created a real run (sim 169), let the
+  live dramatiq worker complete it, and confirmed via `manage.py shell` that
+  `last_heartbeat_at` (16:10:18.585) is strictly after `started_at` (16:10:17.872) —
+  the watchdog genuinely ticked during a real run, not just in the test's simulated
+  clock. Separately created a synthetic stalled `Running` row directly in the DB (sim
+  170, `started_at`/`last_heartbeat_at` both backdated 45 minutes), ran
+  `manage.py check_stalled_simulations` for real, and confirmed it printed "Marked 1
+  stalled simulation(s) as Error", flipped sim 170 to `Error` with the expected message,
+  and left sim 169 (`Complete`) untouched. Both verification sims deleted by explicit id
+  afterward.
+
+**Operational notes**
+- Restarted both `runserver` and `rundramatiq` (engine + migration change). Checked for
+  strays both before and after per CLAUDE.md: found the same two process trees from the
+  Slice 11.1/11.2 session, killed both fully (`taskkill //F //T` on each root PID),
+  confirmed zero connections to the Redis broker, then started exactly one fresh instance
+  of each and reconfirmed a single clean tree plus a matching pair of the fresh worker's
+  own `spawn_main` children (by start time) — no orphans.
+
+**Notes**
+- The `watchdog` Compose service is the only thing that makes this self-operating out of
+  the box; the manual (non-Docker) dev workflow still needs the command wired into a real
+  cron/Task Scheduler entry to be more than a manually-run diagnostic — documented in both
+  README.md and CLAUDE.md rather than silently assumed.
+- 30 real minutes is a fixed timeout, not adaptive to a given simulation's config (e.g. a
+  very large `durationMinutes`/aircraft count run that's still fully CPU-bound generating
+  data before its first watchdog tick). Given the engine's own documented ~10s wall-clock
+  runtime even for large runs, this wasn't judged a realistic risk — worth revisiting if a
+  future slice makes runs meaningfully heavier.
+
 ## 2026-07-29 — Slice 11.2 — CI pipeline
 
 **Slice:** 11.2 — CI pipeline (Epic 11, Dev-ex & reliability)

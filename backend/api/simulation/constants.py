@@ -66,8 +66,20 @@ CLOSURE_MIN_DURATION_MINUTES = 3.0
 # How often (in sim-minutes) the runner re-reads Simulation.cancel_requested
 # from the DB to decide whether to abort. Small enough to stay responsive on a
 # long run, large enough that a normal run only issues a handful of extra
-# lightweight PK reads.
+# lightweight PK reads. Also the cadence at which the same watchdog bumps
+# Simulation.last_heartbeat_at (see below) — a cancel-check tick already
+# proves the process is alive, so it doubles as the liveness signal.
 CANCELLATION_POLL_MINUTES = 5.0
+
+# --- Stalled-run detection ---
+# Real/wall-clock minutes (unlike every other constant in this file, which is
+# sim-minutes) a Running simulation can go without a heartbeat update before
+# `check_stalled_simulations` considers its worker dead/hung and marks it
+# Error. Generous relative to how long a run actually takes in practice
+# (documented in CLAUDE.md as ~10s wall-clock even for a large run),
+# specifically so a slow-but-genuinely-alive run is never mistaken for a
+# stalled one.
+STALLED_RUN_TIMEOUT_REAL_MINUTES = 30.0
 
 # --- Floating point safety ---
 # `remaining = deadline - elapsed` can converge to a value too small, relative

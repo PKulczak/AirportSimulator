@@ -62,11 +62,11 @@ python manage.py rundramatiq
 #### Alternative: Docker Compose
 
 `docker compose up` from the repo root brings up Postgres, Redis, the Django web server,
-and the `dramatiq` worker together — migrations run automatically before the web server
-and worker start. This is an alternative to the manual steps above, not a supplement to
-them: both default to the same Postgres (`5432`) and Redis (`6379`) ports, so don't run
-both at once. The frontend isn't included — run it separately with `npm run dev` as below,
-pointed at `http://localhost:8000`.
+the `dramatiq` worker, and a `watchdog` service (see below) together — migrations run
+automatically before the web server and worker start. This is an alternative to the manual
+steps above, not a supplement to them: both default to the same Postgres (`5432`) and
+Redis (`6379`) ports, so don't run both at once. The frontend isn't included — run it
+separately with `npm run dev` as below, pointed at `http://localhost:8000`.
 
 ### Frontend
 
@@ -103,6 +103,13 @@ the browser.
   backed by Redis): the history, detail, and visualisation pages update live while a run
   is in progress. If the socket can't connect, the pages fall back to polling the API, so
   the UI still updates on its own without a manual refresh.
+- If the worker running a simulation dies or hangs, its row would otherwise stay `Running`
+  forever. `python manage.py check_stalled_simulations` marks any `Running` simulation
+  with no heartbeat update in the last 30 minutes as `Error`. The Docker Compose workflow
+  runs this automatically (the `watchdog` service loops it every 60s); for the manual
+  workflow, run it by hand or wire it into your own cron/scheduled task.
+- CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the backend test suite
+  and the frontend build/lint on every push and pull request.
 - [CLAUDE.md](CLAUDE.md) documents this repo's conventions and dev-process quirks for
   AI coding agents (e.g. Claude Code) working in it — not needed for manual development,
   but useful if you're using one.

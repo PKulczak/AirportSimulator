@@ -73,5 +73,16 @@ services:
       redis:
         condition: service_healthy
 
+  # Loops check_stalled_simulations (Slice 11.3) so a dead/stray worker's
+  # Running rows actually get marked Error automatically in this Docker
+  # workflow, rather than requiring someone to invoke the command by hand.
+  watchdog:
+    build: ./backend
+    command: sh -c "while true; do python manage.py check_stalled_simulations; sleep 60; done"
+    environment: *backend-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   postgres_data:

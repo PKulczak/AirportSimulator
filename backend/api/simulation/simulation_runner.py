@@ -51,7 +51,11 @@ class SimulationRunner:
 
         simulation.status = Simulation.Status.RUNNING
         simulation.started_at = timezone.now()
-        simulation.save(update_fields=["status", "started_at"])
+        # Seeds the heartbeat so check_stalled_simulations has a real
+        # reference point even if the worker dies before the watchdog's first
+        # tick — see _watchdog below for the periodic updates.
+        simulation.last_heartbeat_at = simulation.started_at
+        simulation.save(update_fields=["status", "started_at", "last_heartbeat_at"])
         publish_simulation_status(simulation.id, simulation.status)
 
         try:
@@ -120,7 +124,7 @@ class SimulationRunner:
 
         wrappers = [SimulationRunwayWrapper(env, sr) for sr in simulation_runways]
 
-        env.process(self._cancellation_watchdog(env, simulation))
+        env.process(self._watchdog(env, simulation))
 
         if simulation.include_closures:
             for sr, wrapper in zip(simulation_runways, wrappers):
@@ -149,17 +153,24 @@ class SimulationRunner:
         self._force_terminate_stragglers(simulation, to_datetime, env)
 
     @staticmethod
-    def _cancellation_watchdog(env, simulation):
-        """Periodically re-reads `cancel_requested` from the DB; raising
-        `SimulationCancelled` unwinds `env.run()` at a SimPy step boundary (a
-        safe point — no aircraft is mid-operation between yields), so the run
-        stops promptly and lands on Cancelled. Bounded by `env.run(until=...)`,
-        so on a normal run it just gets abandoned at the horizon."""
+    def _watchdog(env, simulation):
+        """Periodically (in sim-minutes) re-reads `cancel_requested` from the
+        DB and bumps `last_heartbeat_at` to the current real/wall-clock time.
+        The two are combined because a cancel-check tick already proves the
+        process is alive and progressing — the natural place to also record
+        that liveness for `check_stalled_simulations` to later notice its
+        absence. Raising `SimulationCancelled` unwinds `env.run()` at a SimPy
+        step boundary (a safe point — no aircraft is mid-operation between
+        yields), so a cancelled run stops promptly. Bounded by
+        `env.run(until=...)`, so on a normal run it just gets abandoned at the
+        horizon."""
         while True:
             yield env.timeout(constants.CANCELLATION_POLL_MINUTES)
             simulation.refresh_from_db(fields=["cancel_requested"])
             if simulation.cancel_requested:
                 raise SimulationCancelled()
+            simulation.last_heartbeat_at = timezone.now()
+            simulation.save(update_fields=["last_heartbeat_at"])
 
     @staticmethod
     def _operation_minutes(aircraft_speed_knots):

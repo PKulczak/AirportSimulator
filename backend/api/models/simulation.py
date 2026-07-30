@@ -46,6 +46,13 @@ class Simulation(models.Model):
 
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    # Bumped on a real/wall-clock cadence while status is Running (see
+    # SimulationRunner's watchdog) — kept separate from `updated_at` so a
+    # future field write mid-run can't accidentally look like a fresh
+    # heartbeat. `check_stalled_simulations` compares this against a timeout
+    # to catch a dead/hung worker that would otherwise leave a run stuck
+    # Running forever.
+    last_heartbeat_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

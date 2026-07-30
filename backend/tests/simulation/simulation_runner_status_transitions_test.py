@@ -88,3 +88,60 @@ def test_run_sets_started_at_before_completed_at():
 
     simulation.refresh_from_db()
     assert simulation.started_at <= simulation.completed_at
+
+
+@pytest.mark.django_db
+def test_heartbeat_is_seeded_even_if_the_watchdog_never_ticks(monkeypatch):
+    # Isolates the seed-at-Running-transition behaviour from the watchdog's
+    # own periodic bump (covered separately below) by making the watchdog a
+    # no-op — check_stalled_simulations always has a real reference point,
+    # never a null one, for any run that actually started, even one whose
+    # worker died before the watchdog's first tick.
+    def no_op_watchdog(env, simulation):
+        return
+        yield  # pragma: no cover - makes this a generator function.
+
+    monkeypatch.setattr(SimulationRunner, "_watchdog", staticmethod(no_op_watchdog))
+
+    helper = BaseFeatureTest()
+    runway = helper.create_runways(1)[0]
+    simulation = helper.create_simulations(1, random_seed=1)
+    SimulationRunway.objects.create(
+        simulation=simulation,
+        runway=runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+
+    SimulationRunner().run(simulation.id)
+
+    simulation.refresh_from_db()
+    assert simulation.status == Simulation.Status.COMPLETE
+    assert simulation.last_heartbeat_at == simulation.started_at
+
+
+@pytest.mark.django_db
+def test_heartbeat_advances_past_the_seeded_value_once_the_watchdog_ticks():
+    # A run long enough (in sim-minutes) to cross at least one
+    # CANCELLATION_POLL_MINUTES tick should show the watchdog's periodic
+    # bump, not just the value seeded at the Running transition.
+    helper = BaseFeatureTest()
+    runway = helper.create_runways(1)[0]
+    simulation = helper.create_simulations(
+        1,
+        arrival_rate_per_hour=20,
+        departure_rate_per_hour=20,
+        duration_minutes=30,
+        max_wait_minutes=10,
+        random_seed=1,
+    )
+    SimulationRunway.objects.create(
+        simulation=simulation,
+        runway=runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+
+    SimulationRunner().run(simulation.id)
+
+    simulation.refresh_from_db()
+    assert simulation.status == Simulation.Status.COMPLETE
+    assert simulation.last_heartbeat_at > simulation.started_at
