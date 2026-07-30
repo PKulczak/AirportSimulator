@@ -26,6 +26,50 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Redesign: reordered create-simulation and sweep forms into a fixed 5-line layout
+
+**Slice:** n/a (user-requested layout reorganization of `RequestForm.tsx`/`SweepForm.tsx`)
+**Status:** Done
+
+**Request:** restructure both forms into the same fixed row order — (1) Name, Random Seed;
+(2) Duration, Arrivals/hr, Departures/hr, Max Wait; (3) Weather, Include Random Closures,
+Customize Aircraft Weight-Class Mix; (4) the weight-class-mix bar (only when customization is
+on); (5) the runway table — with the sweep form's own Variable/End-Value/Step block sitting
+between rows 4 and 5. No field was renamed, only regrouped/reordered.
+
+**Frontend**
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — row 1
+  narrowed from Name/Closures/Seed (`[2fr_1fr_1fr]`) to just Name/Seed (`[2fr_1fr]`);
+  `includeClosures` moved out of row 1 and into row 3 alongside Weather and the "Customize
+  Aircraft Weight-Class Mix?" toggle (now `sm:grid-cols-3`, was `sm:grid-cols-2`). Row 2
+  (Duration/Arrivals/Departures/Max Wait), the conditional weight-bar row, and the runway
+  table were already in the right positions and are unchanged.
+- [frontend/src/components/SweepForm.tsx](frontend/src/components/SweepForm.tsx) — same
+  restructuring, plus this form previously had **no weight-class-mix UI at all** (a scope cut
+  from Slice 7.1, since closed for Weather specifically but not yet for the mix): added the
+  same `isCustomMix`/`mixValue`/`handleMixChange`/`handleCustomMixToggle` logic and
+  `WeightClassMixSlider` usage as `RequestForm.tsx`, so the sweep form now has full parity.
+  Row 1 narrowed to Name/Seed (`[2fr_1fr]`, was `[2fr_1fr_1fr_1fr]` with Closures and Weather
+  also in it); the new row 3 (Weather/Closures/Custom-Mix-toggle) and conditional weight-bar
+  row were inserted directly above the existing "Sweep Configuration" box (Variable/End
+  Value/Step), so that box now sits between rows 4 and 5 as requested, unchanged itself.
+
+**Verification**
+- `npx tsc -b --noEmit`, `npm run build`, `npm run lint`, and `npm run test` (46, unrelated —
+  pure layout/JSX reorganization plus reusing already-tested `WeightClassMixSlider`/schema
+  logic, no new field names or validation rules) all clean.
+- **Not visually verified in a browser** (no browser-automation tool available in this
+  environment) — confirmed the JSX structure matches the requested row order by direct
+  reading, and that `tsc`/HMR settle at 0 errors, but the actual on-screen layout/spacing
+  wasn't eyeballed.
+
+**Notes**
+- The sweep form's weight-class-mix toggle/slider reuses the exact same component and
+  handler logic as the create form (including the "validate only on the last setValue call"
+  fix from the entry below), rather than duplicating slightly different logic — the two
+  forms' `SimulationFormValues`/`SweepFormValues` share the same three field names via
+  `simulationFormBaseSchema`, so the handlers are copy-identical.
+
 ## 2026-07-30 — Fix: mix slider intermittently showed a spurious "must sum to 100" error
 
 **Slice:** n/a (user-reported bug in the just-shipped weight-class-mix slider redesign)
