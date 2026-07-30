@@ -46,6 +46,7 @@ export function normalizeVisualisation(
       operator: ac.operator,
       originDestination: ac.originDestination,
       movementType: ac.movementType,
+      weightClass: ac.weightClass,
       initialFuelMinutes: ac.initialFuelMinutes,
       scheduledTime: toMinutes(ac.scheduledTime) as number,
       queueEntryTime: toMinutes(ac.queueEntryTime),

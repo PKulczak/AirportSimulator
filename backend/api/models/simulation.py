@@ -31,6 +31,13 @@ class Simulation(models.Model):
     aircraft_speed_knots = models.PositiveIntegerField()
     include_closures = models.BooleanField(default=False)
     random_seed = models.IntegerField(null=True, blank=True)
+    # Optional override of the engine's default Heavy/Medium/Light traffic mix
+    # (see constants.DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES). All three null (the
+    # default) means "use the engine's built-in mix"; the creation DTO
+    # requires all three set together, summing to 100, whenever any is given.
+    heavy_percentage = models.PositiveIntegerField(null=True, blank=True)
+    medium_percentage = models.PositiveIntegerField(null=True, blank=True)
+    light_percentage = models.PositiveIntegerField(null=True, blank=True)
     # Optional grouping for a set of runs (e.g. a parameter sweep). Nullable —
     # most runs aren't part of a batch. SET_NULL rather than CASCADE: deleting
     # the batch grouping shouldn't delete the underlying run results.

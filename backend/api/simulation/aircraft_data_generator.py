@@ -66,6 +66,29 @@ class AircraftDataGenerator:
         self.simulation = simulation
         self.base_time = base_time
         self.rng = np.random.default_rng(simulation.random_seed)
+        self._weight_classes, self._weight_class_probabilities = (
+            self._resolve_weight_class_mix(simulation)
+        )
+
+    @staticmethod
+    def _resolve_weight_class_mix(simulation):
+        """Returns `(classes, probabilities)` for `rng.choice`, from the
+        simulation's own heavy/medium/light percentages if all three are set,
+        else the engine's default mix. `SimulationCreationDto` guarantees
+        these three are never set partially (all-or-nothing, summing to 100),
+        so checking `heavy_percentage` alone is enough to know which case
+        this is."""
+        if simulation.heavy_percentage is not None:
+            mix = {
+                Aircraft.WeightClass.HEAVY: simulation.heavy_percentage,
+                Aircraft.WeightClass.MEDIUM: simulation.medium_percentage,
+                Aircraft.WeightClass.LIGHT: simulation.light_percentage,
+            }
+        else:
+            mix = constants.DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES
+        classes = [str(weight_class) for weight_class in mix]
+        probabilities = [mix[weight_class] / 100.0 for weight_class in classes]
+        return classes, probabilities
 
     def generate(self):
         """Returns a list of `(Aircraft, actual_offset_minutes)` pairs,
@@ -109,6 +132,10 @@ class AircraftDataGenerator:
             constants.INITIAL_FUEL_MINUTES_MIN, constants.INITIAL_FUEL_MINUTES_MAX
         )
 
+        weight_class = self.rng.choice(
+            self._weight_classes, p=self._weight_class_probabilities
+        )
+
         scheduled_time = self.base_time + timedelta(minutes=target_offset_minutes)
 
         aircraft = Aircraft(
@@ -117,6 +144,7 @@ class AircraftDataGenerator:
             operator=operator,
             origin_destination=origin_destination,
             movement_type=movement_type,
+            weight_class=str(weight_class),
             initial_fuel_minutes=initial_fuel_minutes,
             scheduled_time=scheduled_time,
             outcome=Aircraft.Outcome.PENDING,

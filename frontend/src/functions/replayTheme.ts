@@ -1,5 +1,5 @@
 import type { OperatingMode, OperationalStatus } from '../types/runway';
-import type { AircraftEventType } from '../types/visualisation';
+import type { AircraftEventType, WeightClass } from '../types/visualisation';
 
 /** Shared colour/label mapping so the legend, runway cards, and queue rows
  * all agree on what each operating mode / emergency type looks like. `fill` is
@@ -69,3 +69,17 @@ export const CLOSURE_REASON_LEGEND = (
 )
   .filter((status) => status !== 'Available')
   .map((status) => ({ status, ...OPERATIONAL_STATUS_STYLE[status] }));
+
+/** Single-letter badge shown next to a callsign wherever an aircraft appears
+ * in the replay (holding/takeoff queues, runway occupancy) — drives wake
+ * separation, so it's useful context for why a Light aircraft is stuck
+ * waiting behind a Heavy. */
+export const WEIGHT_CLASS_STYLE: Record<WeightClass, { label: string; abbreviation: string }> = {
+  Heavy: { label: 'Heavy', abbreviation: 'H' },
+  Medium: { label: 'Medium', abbreviation: 'M' },
+  Light: { label: 'Light', abbreviation: 'L' },
+};
+
+export const WEIGHT_CLASS_LEGEND = (Object.keys(WEIGHT_CLASS_STYLE) as WeightClass[]).map(
+  (weightClass) => ({ weightClass, ...WEIGHT_CLASS_STYLE[weightClass] }),
+);

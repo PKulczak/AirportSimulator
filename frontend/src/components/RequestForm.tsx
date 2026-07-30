@@ -240,6 +240,85 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="heavyPercentage" className="min-h-10 text-sm font-bold text-slate-800">
+            Heavy Aircraft % (optional)
+          </label>
+          <Controller
+            name="heavyPercentage"
+            control={control}
+            render={({ field }) => (
+              <InputNumber
+                inputId="heavyPercentage"
+                value={field.value}
+                onValueChange={(e) => field.onChange(e.value ?? null)}
+                min={0}
+                max={100}
+                suffix="%"
+                placeholder="Default mix"
+                className="w-full"
+                inputClassName="w-full"
+              />
+            )}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="mediumPercentage" className="min-h-10 text-sm font-bold text-slate-800">
+            Medium Aircraft % (optional)
+          </label>
+          <Controller
+            name="mediumPercentage"
+            control={control}
+            render={({ field }) => (
+              <InputNumber
+                inputId="mediumPercentage"
+                value={field.value}
+                onValueChange={(e) => field.onChange(e.value ?? null)}
+                min={0}
+                max={100}
+                suffix="%"
+                placeholder="Default mix"
+                className="w-full"
+                inputClassName="w-full"
+              />
+            )}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="lightPercentage" className="min-h-10 text-sm font-bold text-slate-800">
+            Light Aircraft % (optional)
+          </label>
+          <Controller
+            name="lightPercentage"
+            control={control}
+            render={({ field }) => (
+              <InputNumber
+                inputId="lightPercentage"
+                value={field.value}
+                onValueChange={(e) => field.onChange(e.value ?? null)}
+                min={0}
+                max={100}
+                suffix="%"
+                placeholder="Default mix"
+                className="w-full"
+                inputClassName="w-full"
+              />
+            )}
+          />
+        </div>
+
+        {errors.heavyPercentage && (
+          <small className="text-red-600 sm:col-span-3">{errors.heavyPercentage.message}</small>
+        )}
+        <small className="text-slate-500 sm:col-span-3">
+          Leave all three blank to use the default Heavy/Medium/Light traffic mix; set all three
+          together (summing to 100%) to override it.
+        </small>
+      </div>
+
       <RunwaySelectionField
         runwayIds={selectedRunwayIds}
         runwayModes={runwayModes}

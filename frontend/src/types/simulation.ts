@@ -48,6 +48,11 @@ export interface SimulationConfig {
   aircraftSpeedKnots: number;
   includeClosures: boolean;
   randomSeed: number | null;
+  /** Optional Heavy/Medium/Light traffic-mix override (percent, sums to 100);
+   * all three null means the engine's default mix was used. */
+  heavyPercentage: number | null;
+  mediumPercentage: number | null;
+  lightPercentage: number | null;
   runways: SimulationRunwayConfig[];
 }
 
@@ -62,6 +67,11 @@ export interface CreateSimulationRequest {
   includeClosures: boolean;
   /** Optional reproducibility seed; omit for a fresh random run. */
   randomSeed?: number;
+  /** Optional Heavy/Medium/Light traffic-mix override (percent, sums to 100);
+   * omit all three to use the engine's default mix. */
+  heavyPercentage?: number;
+  mediumPercentage?: number;
+  lightPercentage?: number;
   runways: SimulationRunwayConfig[];
 }
 

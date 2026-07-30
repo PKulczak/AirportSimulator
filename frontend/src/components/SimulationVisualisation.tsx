@@ -18,7 +18,7 @@ import {
   normalizeVisualisation,
   processEvents,
 } from '../functions/visualisationHelpers';
-import { EMERGENCY_LEGEND, MODE_LEGEND } from '../functions/replayTheme';
+import { EMERGENCY_LEGEND, MODE_LEGEND, WEIGHT_CLASS_LEGEND } from '../functions/replayTheme';
 import type {
   AircraftEventType,
   EmergencyEvent,
@@ -334,7 +334,9 @@ export default function SimulationVisualisation() {
             {/* Legend row sits directly above the queues/runways block, each
              * group locked over the element it describes: the emergency
              * legend over the holding queue (where the dots appear), the
-             * runway-mode legend over the runway list. */}
+             * runway-mode legend over the runway list, and the weight-class
+             * legend (relevant to both queues and runway occupancy) over the
+             * departures queue. */}
             <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
               <div className="flex items-center justify-center gap-3">
                 {EMERGENCY_LEGEND.map((item) => (
@@ -364,7 +366,19 @@ export default function SimulationVisualisation() {
                 ))}
               </div>
 
-              <div />
+              <div className="flex items-center justify-center gap-3">
+                {WEIGHT_CLASS_LEGEND.map((item) => (
+                  <span
+                    key={item.weightClass}
+                    className="flex items-center gap-1 text-[10px] font-medium text-slate-600"
+                  >
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-black bg-white text-[9px] font-bold">
+                      {item.abbreviation}
+                    </span>
+                    <span className="inline-block leading-tight">{item.label}</span>
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -392,6 +406,7 @@ export default function SimulationVisualisation() {
                   if (ac && ac.runwayAssignedTime !== null && ac.completionTime !== null) {
                     occupancy = {
                       callsign: ac.callsign,
+                      weightClass: ac.weightClass,
                       startTime: ac.runwayAssignedTime,
                       endTime: ac.completionTime,
                       movementType: ac.movementType,

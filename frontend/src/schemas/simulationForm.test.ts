@@ -148,6 +148,36 @@ describe('simulationFormSchema', () => {
     );
     expect(result.success).toBe(true);
   });
+
+  it('accepts all three weight-class percentages left blank', () => {
+    expect(
+      simulationFormSchema.safeParse(
+        validFormValues({ heavyPercentage: null, mediumPercentage: null, lightPercentage: null }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it('accepts all three weight-class percentages set and summing to 100', () => {
+    expect(
+      simulationFormSchema.safeParse(
+        validFormValues({ heavyPercentage: 20, mediumPercentage: 60, lightPercentage: 20 }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it('rejects only some of the weight-class percentages being set', () => {
+    const result = simulationFormSchema.safeParse(
+      validFormValues({ heavyPercentage: 20, mediumPercentage: null, lightPercentage: null }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects weight-class percentages that do not sum to 100', () => {
+    const result = simulationFormSchema.safeParse(
+      validFormValues({ heavyPercentage: 20, mediumPercentage: 60, lightPercentage: 30 }),
+    );
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('sweepFormSchema', () => {
@@ -210,6 +240,20 @@ describe('toCreateSimulationRequest', () => {
       { runwayId: 1, operatingMode: 'Mixed', operationalStatus: 'Available' },
     ]);
   });
+
+  it('omits the weight-class mix entirely when left blank', () => {
+    const request = toCreateSimulationRequest(validFormValues());
+    expect(request).not.toHaveProperty('heavyPercentage');
+  });
+
+  it('includes the weight-class mix when set', () => {
+    const request = toCreateSimulationRequest(
+      validFormValues({ heavyPercentage: 20, mediumPercentage: 60, lightPercentage: 20 }),
+    );
+    expect(request.heavyPercentage).toBe(20);
+    expect(request.mediumPercentage).toBe(60);
+    expect(request.lightPercentage).toBe(20);
+  });
 });
 
 describe('toCreateSweepRequest', () => {
@@ -238,6 +282,9 @@ describe('configToFormValues', () => {
     aircraftSpeedKnots: 140,
     includeClosures: false,
     randomSeed: 42,
+    heavyPercentage: 20,
+    mediumPercentage: 60,
+    lightPercentage: 20,
     runways: [
       { runwayId: 1, operatingMode: 'Mixed', operationalStatus: 'Available' },
       { runwayId: 2, operatingMode: 'ArrivalsOnly' },
@@ -254,6 +301,13 @@ describe('configToFormValues', () => {
   it('carries the seed through so a duplicate pre-fills it', () => {
     expect(configToFormValues(sampleConfig).randomSeed).toBe(42);
   });
+
+  it('carries the weight-class mix through so a duplicate pre-fills it', () => {
+    const values = configToFormValues(sampleConfig);
+    expect(values.heavyPercentage).toBe(20);
+    expect(values.mediumPercentage).toBe(60);
+    expect(values.lightPercentage).toBe(20);
+  });
 });
 
 describe('detailToRerunRequest', () => {
@@ -268,6 +322,9 @@ describe('detailToRerunRequest', () => {
     aircraftSpeedKnots: 140,
     includeClosures: false,
     randomSeed: null,
+    heavyPercentage: null,
+    mediumPercentage: null,
+    lightPercentage: null,
     createdAt: '2026-01-01T00:00:00Z',
     startedAt: '2026-01-01T00:00:05Z',
     completedAt: '2026-01-01T00:10:00Z',
@@ -319,5 +376,22 @@ describe('detailToRerunRequest', () => {
   it('includes randomSeed when the original run had one', () => {
     const request = detailToRerunRequest({ ...sampleDetail, randomSeed: 777 });
     expect(request.randomSeed).toBe(777);
+  });
+
+  it('omits the weight-class mix when the original run used the default', () => {
+    const request = detailToRerunRequest(sampleDetail);
+    expect(request).not.toHaveProperty('heavyPercentage');
+  });
+
+  it('includes the weight-class mix when the original run overrode it', () => {
+    const request = detailToRerunRequest({
+      ...sampleDetail,
+      heavyPercentage: 30,
+      mediumPercentage: 50,
+      lightPercentage: 20,
+    });
+    expect(request.heavyPercentage).toBe(30);
+    expect(request.mediumPercentage).toBe(50);
+    expect(request.lightPercentage).toBe(20);
   });
 });

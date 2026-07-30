@@ -323,3 +323,43 @@ class SimulationCreationTest(BaseFeatureTest):
         response = self.client.post(reverse("simulation-list"), payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("randomSeed", response.json())
+
+    def test_create_simulation_accepts_and_persists_weight_class_mix(self):
+        payload = self._payload(
+            heavyPercentage=20, mediumPercentage=60, lightPercentage=20
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        simulation = Simulation.objects.get(id=response.json()["id"])
+        self.assertEqual(simulation.heavy_percentage, 20)
+        self.assertEqual(simulation.medium_percentage, 60)
+        self.assertEqual(simulation.light_percentage, 20)
+
+    def test_create_simulation_defaults_weight_class_mix_to_null_when_omitted(self):
+        response = self.client.post(
+            reverse("simulation-list"), self._payload(), format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        simulation = Simulation.objects.get(id=response.json()["id"])
+        self.assertIsNone(simulation.heavy_percentage)
+        self.assertIsNone(simulation.medium_percentage)
+        self.assertIsNone(simulation.light_percentage)
+
+    def test_create_simulation_rejects_partial_weight_class_mix(self):
+        payload = self._payload(heavyPercentage=20)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_simulation_rejects_weight_class_mix_not_summing_to_100(self):
+        payload = self._payload(
+            heavyPercentage=20, mediumPercentage=60, lightPercentage=10
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_simulation_accepts_a_zero_share_within_the_weight_class_mix(self):
+        payload = self._payload(
+            heavyPercentage=0, mediumPercentage=100, lightPercentage=0
+        )
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)

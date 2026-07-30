@@ -6,6 +6,11 @@ class Aircraft(models.Model):
         ARRIVAL = "Arrival", "Arrival"
         DEPARTURE = "Departure", "Departure"
 
+    class WeightClass(models.TextChoices):
+        HEAVY = "Heavy", "Heavy"
+        MEDIUM = "Medium", "Medium"
+        LIGHT = "Light", "Light"
+
     class Outcome(models.TextChoices):
         PENDING = "Pending", "Pending"
         SUCCESS = "Success", "Success"
@@ -27,6 +32,13 @@ class Aircraft(models.Model):
     operator = models.CharField(max_length=128)
     origin_destination = models.CharField(max_length=64)
     movement_type = models.CharField(max_length=16, choices=MovementType.choices)
+    # Drives wake-turbulence separation minima (see
+    # constants.WAKE_SEPARATION_EXTRA_MINUTES) — a Heavy/Medium leading this
+    # aircraft's operation may force it to wait longer than the base
+    # runway-occupancy time before it can actually go.
+    weight_class = models.CharField(
+        max_length=16, choices=WeightClass.choices, default=WeightClass.MEDIUM
+    )
 
     initial_fuel_minutes = models.FloatField()
 

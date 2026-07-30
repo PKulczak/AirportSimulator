@@ -47,6 +47,17 @@ class SimulationSweepCreationDto(serializers.Serializer):
         min_value=0,
         max_value=2147483647,
     )
+    # Passed straight through to each per-run SimulationCreationDto re-validation
+    # below, which enforces the all-or-nothing-summing-to-100 rule.
+    heavy_percentage = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=100
+    )
+    medium_percentage = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=100
+    )
+    light_percentage = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=100
+    )
     runways = SimulationRunwayCreationDto(many=True)
     variable = serializers.ChoiceField(choices=list(SWEEPABLE_VARIABLES))
     range_end = serializers.IntegerField()

@@ -57,6 +57,35 @@ REFERENCE_SPEED_KNOTS = 140
 REFERENCE_OPERATION_MINUTES = 6.0
 MIN_OPERATION_MINUTES = 2.0
 
+# --- Aircraft weight class / wake separation ---
+# Default Heavy/Medium/Light traffic mix (percent, sums to 100) used when a
+# Simulation doesn't override it via heavy_percentage/medium_percentage/
+# light_percentage — a typical scheduled-service airport: mostly Medium
+# (single-aisle jets), a modest share of Heavy (wide-bodies/freighters), and a
+# minority of Light (regional/GA) traffic.
+DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES = {"Heavy": 10, "Medium": 75, "Light": 15}
+
+# Extra minutes a runway must stay occupied by the *trailing* operation on top
+# of its own base (speed-scaled) occupancy time, keyed by
+# (leading aircraft's weight class, trailing aircraft's weight class) —
+# approximates real-world ICAO wake-turbulence separation minima (normally
+# expressed as a landing/departure distance, not time) as a flat extra buffer
+# in this engine's minutes-based model. A Heavy generates the most wake and
+# most affects a Light follower; Light aircraft generate negligible wake, so
+# nothing needs extra separation behind one. Any pair not listed (e.g. no
+# leading operation yet) needs no extra separation.
+WAKE_SEPARATION_EXTRA_MINUTES = {
+    ("Heavy", "Heavy"): 0.0,
+    ("Heavy", "Medium"): 1.5,
+    ("Heavy", "Light"): 3.0,
+    ("Medium", "Heavy"): 0.0,
+    ("Medium", "Medium"): 0.0,
+    ("Medium", "Light"): 1.0,
+    ("Light", "Heavy"): 0.0,
+    ("Light", "Medium"): 0.0,
+    ("Light", "Light"): 0.0,
+}
+
 # --- Runway closures (only scheduled when Simulation.include_closures) ---
 CLOSURE_MEAN_INTERVAL_MINUTES = 45.0
 CLOSURE_MEAN_DURATION_MINUTES = 12.0

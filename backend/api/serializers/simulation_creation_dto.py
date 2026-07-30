@@ -37,6 +37,19 @@ class SimulationCreationDto(serializers.ModelSerializer):
         max_value=100,
         error_messages={"max_value": "Must be 100 or fewer per hour."},
     )
+    # Optional override of the engine's default Heavy/Medium/Light traffic
+    # mix; all three omitted/null (the default) means "use the engine's
+    # built-in mix" — see `validate()` for the all-or-nothing-summing-to-100
+    # rule enforced whenever any of the three is provided.
+    heavy_percentage = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=100
+    )
+    medium_percentage = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=100
+    )
+    light_percentage = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=100
+    )
 
     class Meta:
         model = Simulation
@@ -51,6 +64,9 @@ class SimulationCreationDto(serializers.ModelSerializer):
             "aircraft_speed_knots",
             "include_closures",
             "random_seed",
+            "heavy_percentage",
+            "medium_percentage",
+            "light_percentage",
             "runways",
             "created_at",
         ]
@@ -103,6 +119,22 @@ class SimulationCreationDto(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "At least one of arrival or departure rate must be greater than zero."
             )
+
+        weight_class_percentages = {
+            key: attrs.get(key)
+            for key in ("heavy_percentage", "medium_percentage", "light_percentage")
+        }
+        provided = [value for value in weight_class_percentages.values() if value is not None]
+        if provided:
+            if len(provided) != 3:
+                raise serializers.ValidationError(
+                    "heavyPercentage, mediumPercentage, and lightPercentage must all be "
+                    "provided together, or all omitted to use the default mix."
+                )
+            if sum(provided) != 100:
+                raise serializers.ValidationError(
+                    "heavyPercentage, mediumPercentage, and lightPercentage must sum to 100."
+                )
 
         # Integer-only comparison (maxWait * 10 <= duration * 9) instead of
         # `max_wait_minutes <= duration_minutes * 0.9` — avoids floating-point

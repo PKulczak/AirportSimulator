@@ -25,6 +25,9 @@ class SimulationConfigDto(serializers.ModelSerializer):
             "aircraft_speed_knots",
             "include_closures",
             "random_seed",
+            "heavy_percentage",
+            "medium_percentage",
+            "light_percentage",
             "runways",
         ]
 

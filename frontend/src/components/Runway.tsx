@@ -2,10 +2,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlaneUp } from '@fortawesome/free-solid-svg-icons';
 import type { OperatingMode } from '../types/runway';
-import { OPERATING_MODE_STYLE } from '../functions/replayTheme';
+import type { WeightClass } from '../types/visualisation';
+import { OPERATING_MODE_STYLE, WEIGHT_CLASS_STYLE } from '../functions/replayTheme';
 
 export interface RunwayOccupancy {
   callsign: string;
+  weightClass: WeightClass;
   startTime: number;
   endTime: number;
   /** Drives animation direction: arrivals land left-to-right, departures
@@ -198,6 +200,12 @@ export default function Runway({
                 }`}
               >
                 {occupancy.callsign}
+                <span
+                  className="ml-1 text-xs font-bold text-slate-500"
+                  title={`${WEIGHT_CLASS_STYLE[occupancy.weightClass].label} aircraft`}
+                >
+                  ({WEIGHT_CLASS_STYLE[occupancy.weightClass].abbreviation})
+                </span>
               </span>
             </div>
           </>

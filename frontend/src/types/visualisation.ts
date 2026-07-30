@@ -2,6 +2,7 @@ import type { OperatingMode } from './runway';
 import type { SimulationStatus } from './simulation';
 
 export type MovementType = 'Arrival' | 'Departure';
+export type WeightClass = 'Heavy' | 'Medium' | 'Light';
 export type AircraftOutcome = 'Pending' | 'Success' | 'Diverted' | 'Cancelled';
 export type AircraftEventType =
   | 'LowFuel'
@@ -30,6 +31,7 @@ export interface AircraftVisualisationWire {
   operator: string;
   originDestination: string;
   movementType: MovementType;
+  weightClass: WeightClass;
   initialFuelMinutes: number;
   scheduledTime: string;
   queueEntryTime: string | null;
@@ -89,6 +91,7 @@ export interface AircraftVisualisation {
   operator: string;
   originDestination: string;
   movementType: MovementType;
+  weightClass: WeightClass;
   initialFuelMinutes: number;
   scheduledTime: number;
   queueEntryTime: number | null;

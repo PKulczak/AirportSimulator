@@ -26,6 +26,169 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Slice 7.1 — Aircraft weight classes + wake separation
+
+**Slice:** 7.1 — Aircraft weight classes + wake separation (Epic 7, Engine fidelity)
+**Status:** Done (code + tests + live-verified against the real dev DB/queue)
+
+**Engine**
+- [backend/api/models/aircraft.py](backend/api/models/aircraft.py) — new `Aircraft.WeightClass`
+  (Heavy/Medium/Light) and a `weight_class` field, defaulting to Medium.
+- [backend/api/models/simulation.py](backend/api/models/simulation.py) — three optional,
+  nullable `heavy_percentage`/`medium_percentage`/`light_percentage` fields; all null (the
+  default) means "use the engine's default mix."
+  [backend/api/migrations/0010_aircraft_weight_class_and_simulation_weight_mix.py](backend/api/migrations/0010_aircraft_weight_class_and_simulation_weight_mix.py)
+  (new, applied to the dev DB).
+- [backend/api/simulation/constants.py](backend/api/simulation/constants.py) — added
+  `DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES` (Heavy 10 / Medium 75 / Light 15, a typical
+  scheduled-service mix) and `WAKE_SEPARATION_EXTRA_MINUTES`, a `(leading class, trailing
+  class) -> extra minutes` matrix approximating ICAO wake-turbulence separation minima as a
+  flat extra buffer in this engine's minutes-based model (Heavy leading a Light needs the
+  most; Light leaders need none, matching real wake-vortex behaviour).
+- [backend/api/simulation/aircraft_data_generator.py](backend/api/simulation/aircraft_data_generator.py)
+  — resolves the mix once per generator instance (the simulation's own three percentages if
+  all are set, else the default), then draws each generated aircraft's `weight_class` via
+  `rng.choice(classes, p=probabilities)` — deterministic under the existing `random_seed`.
+- [backend/api/simulation/simulation_runway_wrapper.py](backend/api/simulation/simulation_runway_wrapper.py)
+  — wrapper now tracks `last_operation_class`/`last_operation_end_time` (both `None` until
+  the runway's first operation), the state the separation calculation reads.
+- [backend/api/simulation/simulation_runner.py](backend/api/simulation/simulation_runner.py)
+  — new `_wake_separation_extra_minutes(wrapper, trailing_class, now)`: 0 if there's no
+  leading operation yet, else `max(0, required_gap - elapsed_since_last)` — so a runway that
+  sat idle for a while before the next aircraft arrived only owes whatever separation time
+  hasn't already elapsed, not the full amount every time. The winning aircraft's runway hold
+  is now `operation_minutes + that extra`, instead of always a flat `operation_minutes`
+  (the slice's literal ask: "enforce separation minima between successive operations instead
+  of a flat `REFERENCE_OPERATION_MINUTES`"); `last_operation_class`/`last_operation_end_time`
+  are updated in the same `finally` block that releases the resource, before any queued
+  request for that runway can be granted — this ordering is what makes the calculation see
+  the correct leading class/time even though SimPy resolves the next grant on a later event-
+  loop step, not synchronously inside the release call.
+
+**API / config**
+- [backend/api/serializers/simulation_creation_dto.py](backend/api/serializers/simulation_creation_dto.py)
+  — the three percentages are optional inputs; `validate()` enforces all-or-nothing (all
+  three or none) and that they sum to exactly 100 when given.
+- [backend/api/serializers/simulation_config_dto.py](backend/api/serializers/simulation_config_dto.py),
+  [simulation_detail_dto.py](backend/api/serializers/simulation_detail_dto.py) — expose the
+  three fields too, so Duplicate (Slice 2.3) and re-run-with-same-seed (Slice 3.2) both
+  reproduce the same mix, not silently reverting to the default.
+- [backend/api/serializers/simulation_sweep_creation_dto.py](backend/api/serializers/simulation_sweep_creation_dto.py)
+  — accepts the same three optional fields and passes them through to every generated run's
+  own `SimulationCreationDto` re-validation (same mechanism `random_seed` already uses), so
+  a sweep can fix one mix across every step.
+- [backend/api/serializers/aircraft_visualisation_dto.py](backend/api/serializers/aircraft_visualisation_dto.py)
+  — added `weight_class` so the replay can show it.
+
+**Frontend**
+- [frontend/src/types/visualisation.ts](frontend/src/types/visualisation.ts),
+  [types/simulation.ts](frontend/src/types/simulation.ts),
+  [types/metrics.ts](frontend/src/types/metrics.ts) — new `WeightClass` type; `weightClass`
+  on the aircraft wire/normalized types; `heavyPercentage`/`mediumPercentage`/`lightPercentage`
+  on `SimulationConfig`, `CreateSimulationRequest`, and `SimulationDetail`.
+- [frontend/src/functions/visualisationHelpers.ts](frontend/src/functions/visualisationHelpers.ts)
+  — `normalizeVisualisation()` carries `weightClass` through.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) — three
+  new nullable form fields plus a shared `weightClassMixIssue()` cross-field check (all
+  blank, or all three set summing to 100 — mirrors the backend DTO exactly), applied to both
+  `simulationFormSchema` and `sweepFormSchema`; `toCreateSimulationRequest`/
+  `detailToRerunRequest`/`configToFormValues` updated to carry the mix through the
+  create/duplicate/re-run round trip the same way `randomSeed` already does (omit entirely
+  when null, since the three are all-or-nothing).
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — three
+  optional "Heavy/Medium/Light Aircraft %" `InputNumber` fields (percent suffix, "Default
+  mix" placeholder) in the create form, with a hint explaining the all-or-nothing rule.
+  **Not added to `SweepForm.tsx`** — the sweep DTO/schema already accept and validate the
+  mix (so an API-level sweep with a fixed mix works today), but no UI inputs were added
+  there; a deliberate scope cut, not a gap in validation.
+- [frontend/src/functions/replayTheme.ts](frontend/src/functions/replayTheme.ts) — new
+  `WEIGHT_CLASS_STYLE`/`WEIGHT_CLASS_LEGEND` (single-letter H/M/L abbreviations, mirroring
+  the existing mode/emergency style maps).
+- [frontend/src/components/Runway.tsx](frontend/src/components/Runway.tsx),
+  [components/QueueTable.tsx](frontend/src/components/QueueTable.tsx) — the weight-class
+  abbreviation now renders next to a callsign everywhere an aircraft appears in the replay
+  (runway occupancy, holding/takeoff queues), with the full label as a tooltip.
+- [frontend/src/components/SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx)
+  — passes `weightClass` into `Runway`'s occupancy prop; the previously-empty third legend
+  slot (over the departures queue) now shows the H/M/L legend.
+
+**Verification**
+- New [backend/tests/simulation/wake_separation_test.py](backend/tests/simulation/wake_separation_test.py)
+  (11 tests): pure unit tests of `_wake_separation_extra_minutes` (no leading operation ->
+  0; full matrix value when nothing has elapsed; 0 for a same-class pair; partial credit
+  when the runway already sat idle for part of the required gap; 0 once enough idle time has
+  passed); a fresh `SimulationRunwayWrapper` starts with no recorded operation; two full-
+  engine tests (via `SimulationRunner().run()`, monkeypatching `AircraftDataGenerator.generate`
+  to return two fixed-class Departures — departures never roll for emergencies, keeping the
+  scenario deterministic) proving a Light immediately behind a Heavy takes exactly
+  `base + WAKE_SEPARATION_EXTRA_MINUTES[("Heavy","Light")]` to clear the runway, while the
+  Heavy's own (nothing-preceding-it) operation is exactly the base time, and a same-class
+  (Medium/Medium) pair needs no extra separation at all.
+- [backend/tests/simulation/aircraft_data_generator_test.py](backend/tests/simulation/aircraft_data_generator_test.py)
+  (+4): every generated aircraft has a valid weight class; the default mix's realized
+  proportions land within 3 points of `DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES` over 500+
+  samples; a 100% Heavy override produces only Heavy aircraft; a mix with a 0% share for one
+  class produces none of it.
+- [backend/tests/feature/simulation_creation_test.py](backend/tests/feature/simulation_creation_test.py)
+  (+5), [simulation_config_test.py](backend/tests/feature/simulation_config_test.py) (+1),
+  [simulation_sweep_test.py](backend/tests/feature/simulation_sweep_test.py) (+2),
+  [simulation_visualisation_test.py](backend/tests/feature/simulation_visualisation_test.py)
+  (updated) — accepts/persists a custom mix; defaults to null when omitted; rejects a
+  partial mix and one that doesn't sum to 100; accepts a legitimate 0% share; config/sweep
+  round-trip the mix; visualisation response includes `weightClass`.
+  **Full backend suite: 206 passed** (+29 net new).
+- [frontend/src/schemas/simulationForm.test.ts](frontend/src/schemas/simulationForm.test.ts)
+  (+9): schema accepts all-blank or all-set-summing-to-100, rejects a partial mix and one
+  not summing to 100; `toCreateSimulationRequest`/`detailToRerunRequest`/`configToFormValues`
+  omit/include/carry the mix correctly. `npm run test`: **38 passed** (+9). `npx tsc -b
+  --noEmit`, `npm run build`, and `npm run lint` all clean.
+- Live end-to-end against the real dev DB/queue: created a real run (sim 176) forcing a
+  100%-Heavy mix — every generated aircraft came back `weightClass: "Heavy"`, and four
+  consecutive Heavy successes occupied the runway back-to-back with zero gap (6-minute
+  operations, no separation needed Heavy-behind-Heavy). Created a second run (sim 177) on
+  the default mix — the live visualisation data showed a Medium immediately behind a Heavy
+  occupying the runway for 7.50 minutes (base 6.0 + the Heavy→Medium matrix value of 1.5)
+  and a Light immediately behind a Medium occupying it for 7.00 minutes (base 6.0 + the
+  Medium→Light matrix value of 1.0), while every same-or-lighter-leading pair stayed at the
+  base 6.00/7.00 minutes with a 0.0-minute gap since the prior completion — the exact
+  behaviour the engine change is meant to produce, observed on a real run through the actual
+  dramatiq worker, not just in an isolated test. Both verification sims deleted by explicit
+  id afterward.
+
+**Operational notes**
+- Before touching any process, found (and this time via the process list, not a guess) a
+  genuine stray-process situation left over from a prior session: **two separate
+  `runserver` process trees alive at once** (one rooted under a `manage.py runserver`
+  process whose *own child* had, in turn, spawned a second independent `manage.py runserver`
+  pair — not a normal autoreload relationship), plus the `rundramatiq` worker's two
+  `multiprocessing.spawn_main` children showing up with live Redis-broker connections but a
+  command line containing no mention of "dramatiq" at all — exactly the invisible-orphan
+  failure mode CLAUDE.md documents. Killed every matching process tree (`taskkill //F //T`)
+  for `runserver`/`rundramatiq`/the frontend `concurrently`/`vite`/`tsc --watch` chain,
+  confirmed both the process list and the Redis-connection list were empty, then started
+  exactly one fresh `runserver`, one fresh `rundramatiq`, and one fresh `npm run dev` and
+  confirmed each came up cleanly before running any live verification against them.
+
+**Notes**
+- `WAKE_SEPARATION_EXTRA_MINUTES` values (1.5 min Heavy→Medium, 3.0 min Heavy→Light, 1.0 min
+  Medium→Light, 0 otherwise) are a deliberate flat-minutes approximation of real-world
+  ICAO wake-turbulence distance-based separation minima, not a literal nm-to-minutes
+  conversion — consistent with how every other timing constant in this engine already
+  abstracts real-world aviation rules into simple sim-minutes figures.
+  `DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES` (10/75/15) is similarly a reasonable illustrative
+  default, not sourced from a specific real airport's actual traffic mix.
+  `WAKE_SEPARATION_EXTRA_MINUTES` is not itself exposed as configurable — only the
+  Heavy/Medium/Light traffic *mix* is (matching the slice's literal "BE/FE: Optional class
+  mix in config" wording); promoting the separation matrix to config too would be a natural
+  extension of Slice 7.4 (exposing engine rates/intervals as config) rather than this slice.
+- The sweep form's UI (`SweepForm.tsx`) doesn't expose the three percentage inputs even
+  though the sweep DTO/schema fully support them — a scope cut given this slice's explicit
+  ask was the main create config, not the sweep form specifically; the fields still validate
+  correctly if driven directly against the API.
+- CSV export (Slice 6.1) was deliberately left untouched — that slice's own scope is
+  explicitly the 6 named columns (callsign/movement/outcome/wait/fuel/runway), and adding a
+  7th wasn't asked for here.
+
 ## 2026-07-30 — Feature: always-persisted seed + always-available re-run
 
 **Slice:** n/a (user-requested follow-up to Slice 3.1/3.2's seed feature)

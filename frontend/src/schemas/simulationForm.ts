@@ -72,6 +72,13 @@ const simulationFormBaseSchema = z
       .min(0, 'Seed must be zero or greater')
       .max(2147483647, 'Seed is too large')
       .nullable(),
+    // Optional Heavy/Medium/Light traffic-mix override; null (blank) = use
+    // the engine's default mix. All three must be set together (enforced by
+    // the .superRefine() below), so each is nullable rather than optional —
+    // a shared "leave the whole group blank" default.
+    heavyPercentage: z.number().min(0, 'Must be zero or greater').max(100, 'Must be 100 or fewer').nullable(),
+    mediumPercentage: z.number().min(0, 'Must be zero or greater').max(100, 'Must be 100 or fewer').nullable(),
+    lightPercentage: z.number().min(0, 'Must be zero or greater').max(100, 'Must be 100 or fewer').nullable(),
     runwayIds: z
       .array(z.number())
       .min(1, 'Select at least one runway')
@@ -80,7 +87,39 @@ const simulationFormBaseSchema = z
     runwayInitialStatus: z.record(z.string(), operationalStatusSchema),
   });
 
+/** Shared cross-field check for the optional Heavy/Medium/Light mix: either
+ * all three are blank (use the engine's default mix) or all three are set
+ * and sum to 100 — mirrors the backend DTO's all-or-nothing rule exactly. */
+function weightClassMixIssue(data: {
+  heavyPercentage: number | null;
+  mediumPercentage: number | null;
+  lightPercentage: number | null;
+}): { message: string; path: ['heavyPercentage'] } | null {
+  const values = [data.heavyPercentage, data.mediumPercentage, data.lightPercentage];
+  const providedCount = values.filter((value) => value !== null).length;
+  if (providedCount === 0) {
+    return null;
+  }
+  if (providedCount < 3) {
+    return {
+      message: 'Set all three percentages together, or leave all blank for the default mix',
+      path: ['heavyPercentage'],
+    };
+  }
+  const total = (values as number[]).reduce((sum, value) => sum + value, 0);
+  if (total !== 100) {
+    return { message: 'Heavy/Medium/Light percentages must sum to 100', path: ['heavyPercentage'] };
+  }
+  return null;
+}
+
 export const simulationFormSchema = simulationFormBaseSchema
+  .superRefine((data, ctx) => {
+    const issue = weightClassMixIssue(data);
+    if (issue) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, ...issue });
+    }
+  })
   .refine(
     // Integer-only comparison (maxWait * 10 <= duration * 9) instead of
     // `maxWaitMinutes <= durationMinutes * 0.9` — avoids floating-point
@@ -170,6 +209,9 @@ export const defaultSimulationFormValues: SimulationFormValues = {
   maxWaitMinutes: 20,
   includeClosures: false,
   randomSeed: null,
+  heavyPercentage: null,
+  mediumPercentage: null,
+  lightPercentage: null,
   runwayIds: [],
   runwayModes: {},
   runwayInitialStatus: {},
@@ -211,6 +253,12 @@ export const sweepFormSchema = simulationFormBaseSchema
       const message = 'At least one of arrival or departure rate must be greater than zero';
       ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: ['arrivalRate'] });
       ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: ['departureRate'] });
+    }
+  })
+  .superRefine((data, ctx) => {
+    const issue = weightClassMixIssue(data);
+    if (issue) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, ...issue });
     }
   })
   .refine((data) => data.runwayIds.every((id) => data.runwayModes[String(id)] !== undefined), {
@@ -259,6 +307,9 @@ export function configToFormValues(config: SimulationConfig): SimulationFormValu
     maxWaitMinutes: config.maxWaitMinutes,
     includeClosures: config.includeClosures,
     randomSeed: config.randomSeed,
+    heavyPercentage: config.heavyPercentage,
+    mediumPercentage: config.mediumPercentage,
+    lightPercentage: config.lightPercentage,
     runwayIds: config.runways.map((runway) => runway.runwayId),
     runwayModes,
     runwayInitialStatus,
@@ -277,6 +328,14 @@ export function toCreateSimulationRequest(
     includeClosures: values.includeClosures,
     // Omit entirely when blank so the backend treats it as "no seed" (random).
     ...(values.randomSeed != null ? { randomSeed: values.randomSeed } : {}),
+    // Validation guarantees all three or none are set — checking one is enough.
+    ...(values.heavyPercentage != null
+      ? {
+          heavyPercentage: values.heavyPercentage,
+          mediumPercentage: values.mediumPercentage as number,
+          lightPercentage: values.lightPercentage as number,
+        }
+      : {}),
     runways: values.runwayIds.map((runwayId) => ({
       runwayId,
       operatingMode: values.runwayModes[String(runwayId)] as OperatingMode,
@@ -308,6 +367,13 @@ export function detailToRerunRequest(detail: SimulationDetail): CreateSimulation
     aircraftSpeedKnots: detail.aircraftSpeedKnots,
     includeClosures: detail.includeClosures,
     ...(detail.randomSeed != null ? { randomSeed: detail.randomSeed } : {}),
+    ...(detail.heavyPercentage != null
+      ? {
+          heavyPercentage: detail.heavyPercentage,
+          mediumPercentage: detail.mediumPercentage as number,
+          lightPercentage: detail.lightPercentage as number,
+        }
+      : {}),
     runways: detail.runwayStats.map((runway) => ({
       runwayId: runway.runwayId,
       operatingMode: runway.operatingMode,

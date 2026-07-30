@@ -54,6 +54,9 @@ class SimulationVisualisationTest(BaseFeatureTest):
         self.assertEqual(first_aircraft["events"][0]["eventType"], "LowFuel")
         self.assertEqual(first_aircraft["events"][0]["priorityBoost"], 2)
         self.assertEqual(first_aircraft["runwayId"], runway.id)
+        # create_aircraft doesn't set weight_class, so it falls back to the
+        # model's default — proves the field round-trips through the DTO.
+        self.assertEqual(first_aircraft["weightClass"], "Medium")
 
         self.assertEqual(len(body["runways"]), 1)
         runway_body = body["runways"][0]

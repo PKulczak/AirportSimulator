@@ -71,6 +71,11 @@ export interface SimulationDetail {
   includeClosures: boolean;
   /** Reproducibility seed, or null if the run used a fresh random seed. */
   randomSeed: number | null;
+  /** Optional Heavy/Medium/Light traffic-mix override (percent, sums to 100);
+   * all three null means the engine's default mix was used. */
+  heavyPercentage: number | null;
+  mediumPercentage: number | null;
+  lightPercentage: number | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;

@@ -1,7 +1,8 @@
 import pytest
 from django.utils import timezone
 
-from api.models import Simulation
+from api.models import Aircraft, Simulation
+from api.simulation import constants
 from api.simulation.aircraft_data_generator import AircraftDataGenerator
 
 
@@ -171,3 +172,64 @@ def test_actual_offset_jitters_around_target_with_bounded_deviation():
     average_deviation = sum(deviations) / len(deviations)
     assert average_deviation == pytest.approx(0.0, abs=2.0)
     assert all(abs(d) < 30 for d in deviations)  # ~6 std devs, generous bound
+
+
+@pytest.mark.django_db
+def test_every_generated_aircraft_has_a_valid_weight_class():
+    base_time = timezone.now()
+    sim = _make_simulation(arrival_rate_per_hour=60, departure_rate_per_hour=60)
+
+    result = AircraftDataGenerator(sim, base_time).generate()
+
+    assert len(result) > 0
+    valid_classes = {choice for choice, _ in Aircraft.WeightClass.choices}
+    for aircraft, _ in result:
+        assert aircraft.weight_class in valid_classes
+
+
+@pytest.mark.django_db
+def test_default_weight_class_mix_matches_the_engine_default_percentages():
+    base_time = timezone.now()
+    sim = _make_simulation(
+        arrival_rate_per_hour=60, departure_rate_per_hour=60, duration_minutes=2000,
+        random_seed=99,
+    )
+
+    result = AircraftDataGenerator(sim, base_time).generate()
+    assert len(result) > 500
+
+    counts = {"Heavy": 0, "Medium": 0, "Light": 0}
+    for aircraft, _ in result:
+        counts[aircraft.weight_class] += 1
+
+    for weight_class, expected_percentage in constants.DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES.items():
+        actual_percentage = 100 * counts[weight_class] / len(result)
+        assert actual_percentage == pytest.approx(expected_percentage, abs=3.0)
+
+
+@pytest.mark.django_db
+def test_custom_weight_class_mix_overrides_the_default():
+    base_time = timezone.now()
+    sim = _make_simulation(
+        arrival_rate_per_hour=60, departure_rate_per_hour=0, duration_minutes=120,
+        heavy_percentage=100, medium_percentage=0, light_percentage=0,
+    )
+
+    result = AircraftDataGenerator(sim, base_time).generate()
+
+    assert len(result) > 0
+    assert all(aircraft.weight_class == Aircraft.WeightClass.HEAVY for aircraft, _ in result)
+
+
+@pytest.mark.django_db
+def test_custom_weight_class_mix_with_a_zero_share_generates_none_of_that_class():
+    base_time = timezone.now()
+    sim = _make_simulation(
+        arrival_rate_per_hour=60, departure_rate_per_hour=0, duration_minutes=600,
+        heavy_percentage=50, medium_percentage=50, light_percentage=0,
+    )
+
+    result = AircraftDataGenerator(sim, base_time).generate()
+
+    assert len(result) > 100
+    assert not any(aircraft.weight_class == Aircraft.WeightClass.LIGHT for aircraft, _ in result)

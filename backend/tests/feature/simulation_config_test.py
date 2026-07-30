@@ -124,3 +124,21 @@ class SimulationConfigTest(BaseFeatureTest):
     def test_config_404_for_unknown_simulation(self):
         response = self.client.get(_config_url(999999))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_config_exposes_a_custom_weight_class_mix(self):
+        create = self.client.post(
+            "/api/simulations/",
+            self._create_payload(
+                heavyPercentage=30, mediumPercentage=50, lightPercentage=20
+            ),
+            format="json",
+        )
+        self.assertEqual(create.status_code, status.HTTP_201_CREATED, create.content)
+        sim_id = create.json()["id"]
+
+        response = self.client.get(_config_url(sim_id))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertEqual(body["heavyPercentage"], 30)
+        self.assertEqual(body["mediumPercentage"], 50)
+        self.assertEqual(body["lightPercentage"], 20)

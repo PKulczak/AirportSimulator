@@ -3,12 +3,13 @@ import { OverlayPanel } from 'primereact/overlaypanel';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGasPump, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
 import { deriveQueue } from '../functions/visualisationHelpers';
-import { EMERGENCY_TYPE_STYLE } from '../functions/replayTheme';
+import { EMERGENCY_TYPE_STYLE, WEIGHT_CLASS_STYLE } from '../functions/replayTheme';
 import type {
   AircraftEventType,
   AircraftVisualisation,
   MovementType,
   SimulationEvent,
+  WeightClass,
 } from '../types/visualisation';
 
 interface QueueTableProps {
@@ -25,6 +26,7 @@ interface QueueTableProps {
 interface QueueRow {
   aircraftId: number;
   callsign: string;
+  weightClass: WeightClass;
   operator: string;
   originDestination: string;
   /** Holding-pattern altitude (arrivals only): the highest-priority aircraft
@@ -73,6 +75,7 @@ export default function QueueTable({
       return {
         aircraftId: entry.aircraftId,
         callsign: ac?.callsign ?? `#${entry.aircraftId}`,
+        weightClass: ac?.weightClass ?? 'Medium',
         operator: ac?.operator ?? '',
         originDestination: ac?.originDestination ?? '',
         ...(isArrival
@@ -156,6 +159,12 @@ export default function QueueTable({
               <div className="min-w-0 flex-1">
                 <p className="truncate font-mono text-xs font-semibold text-brand-accent">
                   {row.callsign}
+                  <span
+                    className="ml-1 font-sans text-slate-500"
+                    title={`${WEIGHT_CLASS_STYLE[row.weightClass].label} aircraft`}
+                  >
+                    ({WEIGHT_CLASS_STYLE[row.weightClass].abbreviation})
+                  </span>
                 </p>
                 <p className="truncate text-sm font-semibold text-white">{row.operator}</p>
               </div>

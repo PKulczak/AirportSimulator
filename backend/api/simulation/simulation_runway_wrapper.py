@@ -13,6 +13,13 @@ class SimulationRunwayWrapper:
         self.simulation_runway = simulation_runway
         self.resource = simpy.PriorityResource(env, capacity=1)
         self.closed = False
+        # Weight class of the aircraft that most recently held this runway,
+        # and the sim-time its operation ended — the wake-separation minima
+        # the *next* operation must respect are computed from these (see
+        # SimulationRunner._wake_separation_extra_minutes). None until this
+        # runway has hosted its first operation.
+        self.last_operation_class = None
+        self.last_operation_end_time = None
         # An *insertion-ordered* set of queued processes (dict-as-ordered-set):
         # a plain `set` iterates process objects in id()/hash order, which
         # varies between runs, so `close()` would interrupt queued aircraft in a

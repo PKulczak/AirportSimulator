@@ -186,6 +186,24 @@ class SimulationRunner:
             simulation.save(update_fields=["last_heartbeat_at"])
 
     @staticmethod
+    def _wake_separation_extra_minutes(wrapper, trailing_weight_class, now):
+        """Extra minutes the trailing operation must wait on top of its own
+        base occupancy time, so the gap since the *leading* operation ended
+        is at least `constants.WAKE_SEPARATION_EXTRA_MINUTES[(leading,
+        trailing)]`. Zero when this is the runway's first operation (no
+        leading class yet), when the pair needs no extra separation, or when
+        enough sim-time has already elapsed since the leading operation ended
+        (e.g. the runway sat idle waiting for the next request)."""
+        leading_weight_class = wrapper.last_operation_class
+        if leading_weight_class is None:
+            return 0.0
+        required_gap = constants.WAKE_SEPARATION_EXTRA_MINUTES.get(
+            (leading_weight_class, trailing_weight_class), 0.0
+        )
+        elapsed_since_last = now - wrapper.last_operation_end_time
+        return max(0.0, required_gap - elapsed_since_last)
+
+    @staticmethod
     def _operation_minutes(aircraft_speed_knots):
         if not aircraft_speed_knots:
             return constants.REFERENCE_OPERATION_MINUTES
@@ -342,10 +360,16 @@ class SimulationRunner:
             ]
         )
 
+        total_operation_minutes = operation_minutes + self._wake_separation_extra_minutes(
+            won_wrapper, aircraft.weight_class, env.now
+        )
+
         try:
-            yield env.timeout(operation_minutes)
+            yield env.timeout(total_operation_minutes)
         finally:
             won_wrapper.resource.release(won_request)
+            won_wrapper.last_operation_class = aircraft.weight_class
+            won_wrapper.last_operation_end_time = env.now
 
         self._finalize(aircraft, Aircraft.Outcome.SUCCESS, to_datetime, env)
 

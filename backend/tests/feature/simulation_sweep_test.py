@@ -140,6 +140,29 @@ class SimulationSweepTest(BaseFeatureTest):
         )
         self.assertEqual(seeds, {None})
 
+    def test_sweep_applies_the_same_weight_class_mix_to_every_generated_run(self):
+        response = self.client.post(
+            reverse("simulation-sweep"),
+            self._payload(heavyPercentage=20, mediumPercentage=60, lightPercentage=20),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        body = response.json()
+        mixes = {
+            (s.heavy_percentage, s.medium_percentage, s.light_percentage)
+            for s in Simulation.objects.filter(
+                id__in=[s["id"] for s in body["simulations"]]
+            )
+        }
+        self.assertEqual(mixes, {(20, 60, 20)})
+
+    def test_sweep_rejects_a_weight_class_mix_not_summing_to_100(self):
+        payload = self._payload(
+            heavyPercentage=20, mediumPercentage=60, lightPercentage=30
+        )
+        response = self.client.post(reverse("simulation-sweep"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_sweep_can_step_duration_minutes(self):
         payload = self._payload(
             variable="durationMinutes",

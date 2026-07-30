@@ -22,6 +22,7 @@ class AircraftVisualisationDto(serializers.ModelSerializer):
             "operator",
             "origin_destination",
             "movement_type",
+            "weight_class",
             "initial_fuel_minutes",
             "scheduled_time",
             "queue_entry_time",
