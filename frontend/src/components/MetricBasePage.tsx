@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import {
+  apiClient,
   POLL_INTERVAL_MS,
   SAFETY_POLL_INTERVAL_MS,
   useGet,
@@ -45,6 +46,16 @@ export default function MetricBasePage() {
     Simulation,
     CreateSimulationRequest
   >('/api/simulations/');
+
+  // A plain navigation (not a fetch+blob), so the browser handles the
+  // download itself via the response's Content-Disposition: attachment —
+  // no loading state or blob-URL cleanup to manage.
+  const downloadCsv = () => {
+    if (!data) {
+      return;
+    }
+    window.location.href = `${apiClient.defaults.baseURL}/api/simulations/${data.id}/export.csv/`;
+  };
 
   // Clone this run's config *with its fixed seed* and navigate to the new run.
   const rerunWithSameSeed = async () => {
@@ -203,6 +214,14 @@ export default function MetricBasePage() {
               icon="pi pi-eye"
               aria-label="View full replay"
               onClick={() => navigate(`/simulation/${data.id}/visualisation`)}
+              className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
+            />
+            <Button
+              icon="pi pi-download"
+              aria-label="Download per-aircraft CSV"
+              tooltip="Download per-aircraft CSV"
+              tooltipOptions={{ position: 'left' }}
+              onClick={downloadCsv}
               className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
           </div>

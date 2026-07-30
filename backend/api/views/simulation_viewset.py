@@ -1,4 +1,7 @@
+import csv
+
 from django.db import transaction
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -8,6 +11,7 @@ from rest_framework.response import Response
 
 from api.models import Simulation, SimulationBatch
 from api.notifications import publish_simulation_status
+from api.serializers.aircraft_export_csv import aircraft_csv_rows
 from api.serializers.simulation_config_dto import SimulationConfigDto
 from api.serializers.simulation_creation_dto import SimulationCreationDto
 from api.serializers.simulation_detail_dto import SimulationDetailDto
@@ -16,6 +20,16 @@ from api.serializers.simulation_rename_dto import SimulationRenameDto
 from api.serializers.simulation_sweep_creation_dto import SimulationSweepCreationDto
 from api.serializers.simulation_visualisation_dto import SimulationVisualisationDto
 from api.tasks import run_simulation
+
+
+class _Echo:
+    """A pseudo file-like object whose `write` just returns what it's given,
+    so `csv.writer` can be driven row-by-row without buffering the whole
+    file in memory — the standard Django pattern for streaming a CSV
+    (docs.djangoproject.com/en/stable/howto/outputting-csv/)."""
+
+    def write(self, value):
+        return value
 
 
 class SimulationViewset(
@@ -179,3 +193,14 @@ class SimulationViewset(
         simulation = get_object_or_404(Simulation.objects.for_visualisation(), pk=pk)
         serializer = SimulationVisualisationDto(simulation)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="export.csv", url_name="export-csv")
+    def export_csv(self, request, pk=None):
+        simulation = get_object_or_404(Simulation, pk=pk)
+        writer = csv.writer(_Echo())
+        rows = (writer.writerow(row) for row in aircraft_csv_rows(simulation))
+        response = StreamingHttpResponse(rows, content_type="text/csv")
+        response["Content-Disposition"] = (
+            f'attachment; filename="simulation-{simulation.id}-aircraft.csv"'
+        )
+        return response

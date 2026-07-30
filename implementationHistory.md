@@ -26,6 +26,94 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Slice 6.1 — CSV of the per-aircraft table
+
+**Slice:** 6.1 — CSV of the per-aircraft table (Epic 6, Export)
+**Status:** Done (code + tests + live-verified against the real dev DB/queue)
+
+⚠️ **Naming note:** this is a *different* feature from the earlier
+"2026-07-29 — Slice 6.1 — Wait-time distribution histogram" entry further down this log.
+Epic 6 was renumbered (the old "Charts on the metrics dashboard" epic was removed from
+`nextSteps.md`, shifting Epics 7–12 down to 6–11 — see the "move all the numbers after 6
+down one" entry), so "Slice 6.1" now refers to Epic 6 = Export, not the old Epic 6 =
+Charts. The histogram feature itself was reverted (no
+`MetricsWaitTimeHistogram.tsx`/`waitTimeDistribution` in the working tree, and no
+corresponding commit in `git log`) sometime after it was built, independently of this
+renumbering — noted here only so this log's two same-numbered entries aren't read as
+duplicates or a contradiction.
+
+**Backend**
+- [backend/api/serializers/aircraft_export_csv.py](backend/api/serializers/aircraft_export_csv.py)
+  (new) — `aircraft_csv_rows(simulation)`: a generator yielding the header row then one
+  row per `Aircraft` (`select_related("runway")`, the model's default `scheduled_time`
+  ordering — no explicit `.order_by()` needed). Exactly the 6 columns the slice specifies
+  (callsign, movement, outcome, wait, fuel, assigned runway) — deliberately not more (e.g.
+  operator/origin-destination), matching the slice's literal scope. Wait/fuel formatted
+  to 2 decimal places; wait is blank (not `0` or `None`) for an aircraft that never
+  actually queued.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) —
+  added `export_csv` (`GET /api/simulations/{id}/export.csv/`, via
+  `url_path="export.csv"`), and a small `_Echo` pseudo-buffer class (the standard
+  Django-docs pattern) so `csv.writer` can drive a `StreamingHttpResponse` row-by-row
+  instead of building the whole file in memory first — genuinely streaming, per the
+  slice's "BE: ... streaming the aircraft rows" wording, not just a "generate then
+  respond" `HttpResponse`. Sets `Content-Disposition: attachment` (so it downloads rather
+  than rendering inline) with a `simulation-{id}-aircraft.csv` filename. No status
+  restriction — aircraft rows exist as soon as a run starts (some may still be `Pending`
+  for a `Running` sim), so gating this on `Complete` would just be an arbitrary
+  restriction the slice didn't ask for.
+
+**Frontend**
+- [frontend/src/components/MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx)
+  — a `pi-download` icon button in the detail page's top toolbar (matching this
+  component's existing PrimeIcons convention, not the FontAwesome one `SimulationHistory`
+  uses), alongside Re-run/View-replay. `onClick` just sets `window.location.href` to the
+  export URL — a plain navigation, not a fetch+blob: the response's
+  `Content-Disposition: attachment` header makes the browser handle the download itself,
+  so there's no loading state, blob-URL, or cleanup to manage.
+
+**Verification**
+- [backend/tests/feature/simulation_export_test.py](backend/tests/feature/simulation_export_test.py)
+  (new, 5 tests): header row + exactly one line per aircraft (the slice's own test,
+  literally — includes an aircraft with a null wait and no assigned runway, asserting
+  those cells come out blank); zero aircraft → header-only; correct
+  `Content-Type`/`Content-Disposition`; 404 for an unknown simulation; available
+  regardless of simulation status (checked against a `Running` sim with a `Pending`
+  aircraft). **Full suite: 183 passed** (+5).
+- Discovered while writing the tests: a bare request to `.../export.csv` (no trailing
+  slash) 301-redirects, because DRF's router appends a trailing slash by default — same as
+  every other action on this viewset (`/detail/`, `/config/`, `/visualisation/`,
+  `/cancel/`). Used the slashed form throughout (tests, the frontend's `downloadCsv`) for
+  consistency with the rest of this API, rather than trying to special-case this one
+  route to omit it.
+- Frontend `tsc -b --noEmit`, `npm run build`, `npm run lint`, and `npm run test` (29,
+  unrelated — no frontend test added for this slice, matching its own "pytest asserts..."
+  test spec) all clean.
+- Live end-to-end against the real dev DB/queue: created a real run (sim 171, 20
+  aircraft), let the live dramatiq worker complete it, then fetched
+  `GET /api/simulations/171/export.csv/` directly — 21 lines (header + 20), headers
+  `Content-Type: text/csv` and `Content-Disposition: attachment;
+  filename="simulation-171-aircraft.csv"` both present, row count matching
+  `outcomeCounts.total` (20) from the detail endpoint exactly. Verification sim deleted by
+  explicit id afterward.
+- Not visually verified in a browser (no browser-automation tool available in this
+  environment) — the new download button's placement/click-triggers-download behaviour is
+  unexercised in a real click-through; verified via `tsc`/`eslint`/Vitest and the live CSV
+  content above.
+
+**Operational notes**
+- Restarted both `runserver` and `rundramatiq` (viewset change) — checked for strays
+  before and after per CLAUDE.md, found the same single clean tree of each from the prior
+  session, killed both fully, confirmed zero Redis-broker connections, then started
+  exactly one fresh instance of each. Left `npm run dev` running rather than restarting it
+  — Vite's HMR applies a new button/import in an existing component live, consistent with
+  how every prior frontend-only (or mixed) change in this log has been handled.
+
+**Notes**
+- Only the 6 columns the slice names are included. A natural follow-up (not implemented,
+  out of scope here) would be adding `operator`/`origin_destination` or a per-aircraft
+  timestamp if this export needs to support deeper offline analysis later.
+
 ## 2026-07-30 — Slice 11.4 — Add a frontend test runner (Vitest)
 
 **Slice:** 11.4 — Add a frontend test runner (Vitest) (Epic 11, Dev-ex & reliability)
