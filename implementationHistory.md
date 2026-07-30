@@ -26,6 +26,162 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Fix: printed summary had a stray Arrival/Departure label and a blank timeline
+
+**Slice:** n/a (Slice 6.2 robustness fix, user-reported)
+**Status:** Done
+
+**Symptom (reported):** in the printed/PDF summary, (1) the Arrival Metrics and Departure
+Metrics panels each showed a leftover "Arrival ⇄ Departure" label where the toggle switch
+used to be, even though the switch itself was already hidden; (2) the timeline chart
+showed nothing at all — an empty box.
+
+**Root cause 1 — orphaned toggle labels:** the earlier fix hid the `InputSwitch` itself
+(`.movement-switch { display: none }` in print) but not its two sibling `<span>` text
+labels ("Arrival"/"Departure") that sit next to it in `MetricsMovementStats` — those
+stayed visible, reading as a redundant, broken-looking label beside a panel that's
+already titled "Arrival Metrics"/"Departure Metrics" (doubly redundant now that
+`SimulationPrintSummary` shows both panels side by side instead of switching between
+them).
+
+**Root cause 2 — invisible timeline:** browsers drop element background colours by
+default when printing (an ink-saving default) unless a page explicitly opts back in.
+`MetricsTimeline`'s bars/lines and every panel's amber header are pure `background-color`
+with no border or text of their own, so on a printed page/PDF they silently render as
+blank space — nothing was actually broken in the chart's logic, the colour just never
+reached the page.
+
+**Fix**
+- [frontend/src/components/MetricsMovementStats.tsx](frontend/src/components/MetricsMovementStats.tsx)
+  — added a `movement-toggle` class to the wrapper `<div>` around the switch *and* its
+  two labels (not just the switch), so the whole control — not half of it — disappears
+  together in print.
+- [frontend/src/index.css](frontend/src/index.css) — renamed/widened the print rule from
+  `.movement-switch` to `.movement-toggle`; added a new global
+  `@media print { * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`
+  rule so background colours (the timeline, every panel's accent header, etc.) actually
+  print instead of being silently dropped.
+
+**Verification**
+- `npx tsc -b --noEmit`, `npm run lint`, and `npm run test` (29, unrelated) all clean.
+- **Not visually verified in a browser** (no browser-automation tool available in this
+  environment) — reasoned from (1) which elements the original CSS selector did and
+  didn't cover, and (2) the well-documented browser print default of dropping background
+  colours absent `print-color-adjust: exact`. Re-triggering print and eyeballing the
+  output — now the third open item stacked on this feature — is the outstanding manual
+  step next time this is picked up somewhere a browser can be driven.
+
+**Notes**
+- Combined with the earlier "only one page" fix, every print-CSS issue reported so far
+  traces back to the same root cause: this app was built with zero print-media
+  consideration until Slice 6.2, so every default (fixed-viewport layout, ink-saving
+  colour stripping, an interactive-only control) needed an explicit opt-out for print
+  specifically. Worth a real once-over in an actual browser rather than continuing to
+  patch one symptom at a time from reasoning alone.
+
+## 2026-07-30 — Fix: printed summary only showed one page (cut off after Arrival)
+
+**Slice:** n/a (Slice 6.2 robustness fix, user-reported immediately after shipping)
+**Status:** Done
+
+**Symptom (reported):** clicking "Print / Save as PDF" only produced one page, cut off
+partway through — Departure metrics and the timeline never appeared.
+
+**Root cause:** the previous fix only neutralized `<main>`'s `overflow-y-auto` (via a
+global `@media print` rule targeting `html, body, #root, main` in `index.css`), but
+missed the actual clipping ancestor: `MainLayout`'s outer `<div>` has `h-screen
+overflow-hidden` — a hard viewport-height clip that sits *around* `<main>`, not inside
+it. A browser only prints what's visible inside an `overflow: hidden` (or the current
+scroll position of an `overflow: auto`) container, not its full scrollable content — so
+with the outer div still clipped to one screen's height, everything below that point
+(Departure metrics onward) never made it into the print output, regardless of `<main>`'s
+own overflow setting.
+
+**Fix**
+- [frontend/src/components/MainLayout.tsx](frontend/src/components/MainLayout.tsx) —
+  added `print:h-auto print:overflow-visible` directly to both the outer div (the actual
+  culprit) and `<main>` (redundant with the removed global rule below, but now
+  co-located with the styles it's overriding instead of a separate generic tag-selector
+  rule elsewhere). Also added `print:p-0` on `<main>` to drop its screen-only padding.
+- [frontend/src/index.css](frontend/src/index.css) — removed the now-redundant (and
+  incomplete — it never covered the real culprit) `@media print { html, body, #root,
+  main {...} }` block; the `.movement-switch` print-hide rule is unaffected and stays.
+
+**Verification**
+- `npx tsc -b --noEmit` and `npm run lint` clean.
+- **Not visually verified in a browser** (no browser-automation tool available in this
+  environment) — reasoned through the actual DOM/CSS clipping chain
+  (`html/body/#root` → `MainLayout`'s outer div → `<main>` → `<Outlet />` →
+  `SimulationPrintSummary`) to find the ancestor the first fix missed, rather than
+  confirmed by re-triggering print and inspecting the output. This is the same
+  outstanding manual step noted in the Slice 6.2 entry below — still needs an actual
+  browser to confirm the multi-page print/PDF output now looks right end-to-end.
+
+**Notes**
+- General lesson for any future print-related work in this app: `MainLayout` wraps
+  *every* page in a viewport-height, overflow-hidden shell by design (needed for the
+  live in-browser UI's fixed-viewport pages, e.g. the replay/history "card" layouts) —
+  any printable page needs both layers of that shell (the outer div *and* `<main>`)
+  un-clipped when printing, not just the innermost scrolling container.
+
+## 2026-07-30 — Slice 6.2 — PDF / printable summary
+
+**Slice:** 6.2 — PDF / printable summary (Epic 6, Export)
+**Status:** Done (code clean, not visually verified in a browser — see Verification)
+
+**Design decision:** the slice allows either a browser print-friendly view or a
+server-rendered PDF file. Asked the user, who chose the print-friendly view — no new
+backend dependency/rendering pipeline, users get an actual PDF via the browser's own
+"Print → Save as PDF" dialog.
+
+**Frontend**
+- [frontend/src/components/SimulationPrintSummary.tsx](frontend/src/components/SimulationPrintSummary.tsx)
+  (new) — a single-column print layout at a new route, reusing the dashboard's own
+  metric components directly (`MetricsSimVariables`, `MetricsRunwayInfo`,
+  `MetricsGeneralStats`, `MetricsMovementStats` rendered twice — Arrival and Departure
+  both shown, not toggled — and `MetricsTimeline`) rather than duplicating their
+  formatting logic; only the page chrome and layout differ from `MetricBasePage`. A
+  `print:hidden` toolbar (Back + "Print / Save as PDF" calling `window.print()`) never
+  appears in the actual printed/PDF output. Handles the same loading/error/"not complete
+  yet" states as the dashboard (a printable summary only makes sense for a `Complete` run).
+- [frontend/src/App.tsx](frontend/src/App.tsx) — added the `/simulation/:id/print` route.
+- [frontend/src/components/MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx)
+  — a `pi-print` button in the toolbar (beside the CSV download button) navigating to the
+  new route.
+- [frontend/src/index.css](frontend/src/index.css) — two small `@media print` rules,
+  global but with zero on-screen effect: (1) `MainLayout`'s `<main>` is normally a
+  height-constrained, scrolling container (needed for the live app's fixed-viewport
+  pages) — overridden to `height: auto; overflow: visible` when printing, so content
+  flows and paginates across printed pages instead of being clipped to one screen's
+  worth of height; (2) `.movement-switch` (the Arrival/Departure toggle inside
+  `MetricsMovementStats`, reused as-is on the print page) is hidden when printing
+  anywhere in the app — an interactive control is inert on paper/in a PDF, and this way
+  it's not a special case only handled on the dedicated summary page.
+
+**Verification**
+- `npx tsc -b --noEmit`, `npm run build`, `npm run lint`, and `npm run test` (29,
+  unrelated — no frontend test added; the slice's own test is explicitly manual) all
+  clean.
+- Confirmed via the live dev server (`curl` against `localhost:3000`, HTTP 200) that
+  nothing broke; the frontend dev server was left running (Vite HMR), no backend changes
+  in this slice.
+- **Not visually verified in a browser** (no browser-automation tool available in this
+  environment) — actually opening `/simulation/{id}/print`, triggering
+  `window.print()`/the browser's print preview, and confirming the summary matches the
+  dashboard (the slice's own manual test) is the outstanding step next time this is
+  picked up somewhere a browser can be driven.
+
+**Notes**
+- `MetricsRunwayInfo`/`MetricsSimVariables`/`MetricsGeneralStats`/`MetricsMovementStats`/
+  `MetricsTimeline` all turned out to be reusable as-is outside the dashboard's
+  fixed-aspect-ratio card layout — none of them hard-code a parent height assumption
+  beyond `flex-1`/`min-h-0` (which simply have no effect without a height-constrained
+  ancestor, i.e. they degrade to natural content height), so no changes were needed to
+  any of them beyond the two global print-CSS tweaks above.
+- `print:break-inside-avoid` wraps each section so a browser's print pagination doesn't
+  split a single metrics panel across two pages — not verified visually (see above), but
+  a low-risk, purely cosmetic addition if it turns out unnecessary.
+
 ## 2026-07-30 — Slice 6.1 — CSV of the per-aircraft table
 
 **Slice:** 6.1 — CSV of the per-aircraft table (Epic 6, Export)

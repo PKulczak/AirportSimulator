@@ -65,7 +65,11 @@ export default function MetricsMovementStats({
         <span className="text-sm font-bold uppercase tracking-wide text-black">
           {isArrival ? 'Arrival Metrics' : 'Departure Metrics'}
         </span>
-        <div className="flex items-center gap-2">
+        {/* Hidden in print (see index.css) — the toggle is meaningless once
+         * both panels are shown at once (SimulationPrintSummary renders
+         * Arrival and Departure side by side, not switched), and the panel
+         * title above already says which one this is. */}
+        <div className="movement-toggle flex items-center gap-2">
           <span className="text-xs font-semibold text-black">Arrival</span>
           <InputSwitch
             checked={!isArrival}

@@ -188,6 +188,30 @@ body {
   background: transparent;
 }
 
+/* The Arrival/Departure toggle (switch + its two labels) is only meaningful
+ * as an interactive control — on a printed page (or a saved PDF) it's inert
+ * and, once both panels are shown side by side instead of switched (as
+ * SimulationPrintSummary does), redundant with the panel's own title too.
+ * Hidden everywhere, not just on the dedicated print summary (e.g. printing
+ * the live dashboard directly would otherwise show a dead switch). */
+@media print {
+  .movement-toggle {
+    display: none;
+  }
+}
+
+/* Browsers drop background colours by default when printing (an ink-saving
+ * default) unless a page opts back in — without this, every colour-only
+ * indicator with no other visual marker (the MetricsTimeline bars/lines,
+ * the amber/accent panel headers) prints as blank white space. Scoped to
+ * @media print so it has no on-screen effect. */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
 /* Emergency glow: flickers a row's background between the dark queue
  * background and the emergency's colour (set per-row via the --glow-color
  * custom property, since the colour varies by emergency type). */

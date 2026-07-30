@@ -3,6 +3,7 @@ import MainLayout from './components/MainLayout';
 import SimulationHistory from './components/SimulationHistory';
 import MetricBasePage from './components/MetricBasePage';
 import SimulationVisualisation from './components/SimulationVisualisation';
+import SimulationPrintSummary from './components/SimulationPrintSummary';
 import CompareRuns from './components/CompareRuns';
 import SweepResults from './components/SweepResults';
 import PageNotFound from './components/PageNotFound';
@@ -17,6 +18,7 @@ function App() {
           path="/simulation/:id/visualisation"
           element={<SimulationVisualisation />}
         />
+        <Route path="/simulation/:id/print" element={<SimulationPrintSummary />} />
         <Route path="/compare" element={<CompareRuns />} />
         <Route path="/batch/:batchId" element={<SweepResults />} />
         <Route path="*" element={<PageNotFound />} />

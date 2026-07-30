@@ -224,6 +224,14 @@ export default function MetricBasePage() {
               onClick={downloadCsv}
               className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
+            <Button
+              icon="pi pi-print"
+              aria-label="Print / save summary as PDF"
+              tooltip="Print / save summary as PDF"
+              tooltipOptions={{ position: 'left' }}
+              onClick={() => navigate(`/simulation/${data.id}/print`)}
+              className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
+            />
           </div>
 
           <div className="grid flex-1 grid-cols-1 items-stretch gap-2 lg:grid-cols-3 lg:grid-rows-1">
