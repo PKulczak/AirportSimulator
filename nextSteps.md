@@ -11,9 +11,10 @@ epics are independent of each other.
 - **Backend** slices are testable with `pytest` — feature/API tests via DRF's `APIClient`
   in `backend/tests/feature/`, engine unit tests in `backend/tests/simulation/`. Prefer
   adding a test per slice.
-- **Frontend** has **no test runner today** (see [CLAUDE.md](CLAUDE.md)). Until Slice
-  11.4 (add Vitest) lands, "test" for a frontend-only slice means the explicit manual
-  steps listed under that slice. Slices are written so those steps are short and concrete.
+- **Frontend** has Vitest + Testing Library (Slice 11.4) — prefer backfilling a test per
+  slice under `src/` (e.g. `src/schemas/simulationForm.test.ts`) over the manual steps
+  listed under each older slice below, where practical. Slices written before 11.4 still
+  describe a manual test since that was the only option at the time.
 - Simulations run **async** via dramatiq and the UI does **not** poll — so any slice that
   ends in "watch the status change" depends on Epic 1, or on a manual page refresh until
   then.

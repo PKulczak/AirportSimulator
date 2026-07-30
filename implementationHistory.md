@@ -26,6 +26,79 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Slice 11.4 — Add a frontend test runner (Vitest)
+
+**Slice:** 11.4 — Add a frontend test runner (Vitest) (Epic 11, Dev-ex & reliability)
+**Status:** Done (code + tests + build/lint/test all clean)
+
+**Changes**
+- [frontend/package.json](frontend/package.json) — added `vitest`, `jsdom`,
+  `@testing-library/react`, `@testing-library/jest-dom` as dev dependencies; two new
+  scripts: `test` (`vitest run` — exits after one pass, CI-friendly) and `test:watch`
+  (`vitest`, the interactive dev loop), mirroring the existing `build`/`dev` split.
+- [frontend/vite.config.ts](frontend/vite.config.ts) — added a `test` block (reusing the
+  same config file as the dev/build Vite config, rather than a separate
+  `vitest.config.ts`, so there's one source of truth): `environment: 'jsdom'` (default
+  environment ready for component tests, not just the pure-logic ones backfilled here),
+  `setupFiles: ['./src/test/setup.ts']`. A `/// <reference types="vitest/config" />`
+  triple-slash directive makes the `test` key type-check against `vite.config.ts`'s
+  existing `defineConfig` import (avoids needing a second, Vitest-specific
+  `defineConfig` import just for the types).
+- [frontend/src/test/setup.ts](frontend/src/test/setup.ts) (new) — a single side-effect
+  import of `@testing-library/jest-dom/vitest`, extending `expect` with DOM matchers
+  (`.toBeInTheDocument()` etc.) for whenever a future slice writes a component test.
+- [frontend/src/schemas/simulationForm.test.ts](frontend/src/schemas/simulationForm.test.ts)
+  (new, 29 tests) — the "backfill a couple of tests" the slice asks for, against
+  `simulationForm.ts` specifically because its Zod `.refine()`/`.superRefine()` chains are
+  exactly the kind of cross-field logic that's easy to regress silently and previously had
+  no automated coverage at all (Epic 2/3/5's history entries mention at least one bug
+  caught by hand-verifying this exact file). Covers: `validateSimulationName` (blank, too
+  long, invalid characters, valid-with-punctuation, trims); `simulationFormSchema`'s
+  refinements (the max-wait/duration 90% boundary — both sides of it, since it was
+  deliberately written as an integer comparison to dodge float rounding; both rates zero;
+  a runway missing a mode; no runway accepting the configured arrivals; an
+  arrivals-accepting runway not starting `Available`; closures needing ≥2 runways);
+  `sweepFormSchema`'s **deliberate** divergence from the create schema (same input that
+  fails `simulationFormSchema`'s runway-acceptance rule passes `sweepFormSchema` — a
+  regression test for the intentional design decision documented in that schema's own
+  comment, not just a coverage box-tick); `toCreateSimulationRequest`/`toCreateSweepRequest`
+  (omits `randomSeed` when null, trims the name, defaults a runway's missing initial status
+  to `Available`); `configToFormValues` (id-keyed runway maps, seed carried through for
+  Duplicate); `detailToRerunRequest` (name gets " (re-run)" and stays within the 120-char
+  cap, uses each runway's *initial* status rather than its end-of-run one, seed
+  included/omitted correctly).
+- [.github/workflows/ci.yml](.github/workflows/ci.yml) — added `npm run test` as a step
+  in the existing `frontend` job (after build/lint), so the new suite actually runs on
+  every push/PR rather than sitting unused locally.
+- [README.md](README.md), [CLAUDE.md](CLAUDE.md), [nextSteps.md](nextSteps.md) — replaced
+  the now-stale "no frontend test runner exists" notes (there were three) with how to run
+  it, where config/setup files live, and that CI now runs it.
+
+**Verification**
+- `npm run test`: **29 passed**. `npx tsc -b --noEmit`, `npm run build`, and `npm run
+  lint` all clean with the new config/test files in place.
+- Validated `.github/workflows/ci.yml` still parses correctly (via `pyyaml`) after adding
+  the new step.
+- The actual GitHub Actions run itself was not triggered from this environment (same
+  no-push-access limitation noted in the Slice 11.2 entry) — the new `npm run test` CI
+  step is unexercised on GitHub itself, though it's the exact command just run locally.
+
+**Notes**
+- Chose explicit `import { describe, it, expect } from 'vitest'` per test file over
+  Vitest's `globals: true` option — avoids touching `eslint.config.js` to declare
+  `describe`/`it`/`expect` as known globals (which `globals: true` would have required to
+  keep ESLint's `no-undef`-equivalent checks passing), at the cost of one import line per
+  file. Worth revisiting if writing that import repeatedly becomes annoying.
+- `@testing-library/user-event` wasn't installed — `@testing-library/react` + `jest-dom`
+  is the core "Testing Library" the slice asks for; `user-event` is a natural add-on for
+  whichever future slice writes the first real component test and actually needs to
+  simulate clicks/typing, not needed for this backfill.
+- `npm install` (not `npm ci`) was used to add the new packages — this repo's own `npm
+  run dev` (`vite` + `tsc --watch`) was running throughout, and `npm ci`'s full
+  `node_modules` wipe hits the same Windows file-lock issue on `lightningcss`'s native
+  binary documented in the Slice 11.2 entry. Not a concern for CI (`npm ci` there starts
+  from a clean checkout with no competing process).
+
 ## 2026-07-29 — Slice 11.3 — Run heartbeat + auto-timeout
 
 **Slice:** 11.3 — Run heartbeat + auto-timeout (Epic 11, Dev-ex & reliability)

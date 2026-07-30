@@ -124,7 +124,12 @@ Frontend (run from `frontend/`):
 - `npm run build` — type-checks (`tsc -b`) then `vite build`.
 - `npm run lint` — ESLint over the whole project.
 - `npm run preview` — preview a production build.
-- There is no frontend test runner/suite configured (no Jest/Vitest, no test files) — don't assume one exists when asked to "run the tests" for frontend changes.
+- `npm run test` — Vitest, once (CI-friendly, exits after one run); `npm run test:watch` for the
+  interactive dev loop. Config lives in `vite.config.ts`'s `test` block (`environment: 'jsdom'`,
+  setup file `src/test/setup.ts` for `@testing-library/jest-dom` matchers). Test files sit
+  alongside the code they cover (`*.test.ts`/`*.test.tsx`), not in a separate `tests/` tree —
+  e.g. `src/schemas/simulationForm.test.ts`. `describe`/`it`/`expect` are imported explicitly
+  from `'vitest'` per file (no `globals: true`), so no ESLint config changes were needed.
 
 ## Backend architecture (`backend/`)
 

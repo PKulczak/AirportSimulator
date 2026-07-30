@@ -87,11 +87,11 @@ pytest                              # full backend suite (sqlite in-memory DB, s
 ```bash
 cd frontend
 npm run lint                        # ESLint over the whole project
+npm run test                        # Vitest (Testing Library for component tests)
 ```
 
-There is no frontend test runner configured (no Jest/Vitest, no test files) — frontend
-changes are verified via type-checking (`npm run build`), linting, and manual testing in
-the browser.
+Frontend changes are verified via type-checking (`npm run build`), linting, Vitest, and manual
+testing in the browser.
 
 ## Notes
 
@@ -109,7 +109,7 @@ the browser.
   runs this automatically (the `watchdog` service loops it every 60s); for the manual
   workflow, run it by hand or wire it into your own cron/scheduled task.
 - CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the backend test suite
-  and the frontend build/lint on every push and pull request.
+  and the frontend build/lint/test on every push and pull request.
 - [CLAUDE.md](CLAUDE.md) documents this repo's conventions and dev-process quirks for
   AI coding agents (e.g. Claude Code) working in it — not needed for manual development,
   but useful if you're using one.
