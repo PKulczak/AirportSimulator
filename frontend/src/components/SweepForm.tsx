@@ -12,11 +12,14 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChartLine } from '@fortawesome/free-solid-svg-icons';
 import { usePost } from '../functions/axios';
 import RunwaySelectionField from './RunwaySelectionField';
+import WeightClassMixSlider, { type WeightClassMix } from './WeightClassMixSlider';
 import {
+  DEFAULT_WEIGHT_CLASS_MIX,
   defaultSweepFormValues,
   SWEEP_VARIABLE_OPTIONS,
   sweepFormSchema,
   toCreateSweepRequest,
+  WEATHER_CONDITION_OPTIONS,
   type SweepFormValues,
 } from '../schemas/simulationForm';
 import type { CreateSweepRequest, SweepResponse, SweepVariable } from '../types/simulation';
@@ -68,6 +71,34 @@ export default function SweepForm({ onDone }: SweepFormProps) {
   const runwayInitialStatus = watch('runwayInitialStatus');
   const variable = watch('variable');
 
+  // All three are validated all-or-nothing (see simulationFormSchema), so
+  // checking one is enough to know whether the user has customized the mix.
+  const heavyPercentage = watch('heavyPercentage');
+  const mediumPercentage = watch('mediumPercentage');
+  const lightPercentage = watch('lightPercentage');
+  const isCustomMix = heavyPercentage !== null;
+  const mixValue: WeightClassMix =
+    isCustomMix
+      ? { heavy: heavyPercentage as number, medium: mediumPercentage as number, light: lightPercentage as number }
+      : DEFAULT_WEIGHT_CLASS_MIX;
+
+  // Only the last of these three setValue calls should trigger validation —
+  // see RequestForm.tsx's identical handlers for why (validating after every
+  // individual setValue exposes the resolver to an intermediate, not-yet-
+  // consistent combination of the three fields).
+  const handleMixChange = (next: WeightClassMix) => {
+    setValue('heavyPercentage', next.heavy);
+    setValue('mediumPercentage', next.medium);
+    setValue('lightPercentage', next.light, { shouldValidate: true });
+  };
+
+  const handleCustomMixToggle = (customize: boolean) => {
+    const next = customize ? DEFAULT_WEIGHT_CLASS_MIX : { heavy: null, medium: null, light: null };
+    setValue('heavyPercentage', next.heavy);
+    setValue('mediumPercentage', next.medium);
+    setValue('lightPercentage', next.light, { shouldValidate: true });
+  };
+
   const onSubmit = handleSubmit(async (values) => {
     const created = await execute(toCreateSweepRequest(values));
     if (created) {
@@ -114,7 +145,7 @@ export default function SweepForm({ onDone }: SweepFormProps) {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr]">
         <div className="flex flex-col gap-1">
           <label htmlFor="sweep-name" className="min-h-10 text-sm font-bold text-slate-800">
             Sweep Name {REQUIRED_MARK}
@@ -136,24 +167,6 @@ export default function SweepForm({ onDone }: SweepFormProps) {
             Each generated run's name is suffixed with the swept variable and its value.
           </small>
           {errors.name && <small className="text-red-600">{errors.name.message}</small>}
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="min-h-10 text-sm font-bold text-slate-800">
-            Include Randomised Runway Closure Events? {REQUIRED_MARK}
-          </label>
-          <Controller
-            name="includeClosures"
-            control={control}
-            render={({ field }) => (
-              <SelectButton
-                value={field.value}
-                onChange={(e) => e.value !== null && field.onChange(e.value)}
-                options={CLOSURES_OPTIONS}
-                allowEmpty={false}
-              />
-            )}
-          />
         </div>
 
         <div className="flex flex-col gap-1">
@@ -296,6 +309,75 @@ export default function SweepForm({ onDone }: SweepFormProps) {
           )}
         </div>
       </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="sweep-weatherCondition"
+            className="min-h-10 text-sm font-bold text-slate-800"
+          >
+            Weather {REQUIRED_MARK}
+          </label>
+          <Controller
+            name="weatherCondition"
+            control={control}
+            render={({ field }) => (
+              <Dropdown
+                inputId="sweep-weatherCondition"
+                value={field.value}
+                options={WEATHER_CONDITION_OPTIONS}
+                onChange={(e) => field.onChange(e.value)}
+                className="w-full"
+              />
+            )}
+          />
+          <small className="text-slate-500">Applied to every run in the sweep.</small>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="min-h-10 text-sm font-bold text-slate-800">
+            Include Randomised Runway Closure Events? {REQUIRED_MARK}
+          </label>
+          <Controller
+            name="includeClosures"
+            control={control}
+            render={({ field }) => (
+              <SelectButton
+                value={field.value}
+                onChange={(e) => e.value !== null && field.onChange(e.value)}
+                options={CLOSURES_OPTIONS}
+                allowEmpty={false}
+              />
+            )}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="min-h-10 text-sm font-bold text-slate-800">
+            Customize Aircraft Weight-Class Mix?
+          </label>
+          <SelectButton
+            value={isCustomMix}
+            onChange={(e) => e.value !== null && handleCustomMixToggle(e.value)}
+            options={CLOSURES_OPTIONS}
+            allowEmpty={false}
+          />
+        </div>
+      </div>
+
+      {isCustomMix && (
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-bold text-slate-800">Aircraft Weight-Class Mix</label>
+          <WeightClassMixSlider value={mixValue} onChange={handleMixChange} />
+          <small className="text-slate-500">
+            Drag either divider to trade share between the two aircraft classes it separates.
+            Applied to every run in the sweep.
+          </small>
+          {errors.heavyPercentage && (
+            <small className="text-red-600">{errors.heavyPercentage.message}</small>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-brand-bg p-3">
         <p className="text-sm font-bold text-slate-800">Sweep Configuration</p>

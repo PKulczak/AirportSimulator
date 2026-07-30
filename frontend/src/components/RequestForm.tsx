@@ -9,7 +9,9 @@ import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { usePost } from '../functions/axios';
 import RunwaySelectionField from './RunwaySelectionField';
+import WeightClassMixSlider, { type WeightClassMix } from './WeightClassMixSlider';
 import {
+  DEFAULT_WEIGHT_CLASS_MIX,
   defaultSimulationFormValues,
   simulationFormSchema,
   toCreateSimulationRequest,
@@ -60,6 +62,38 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
   const runwayModes = watch('runwayModes');
   const runwayInitialStatus = watch('runwayInitialStatus');
 
+  // All three are validated all-or-nothing (see simulationFormSchema), so
+  // checking one is enough to know whether the user has customized the mix.
+  const heavyPercentage = watch('heavyPercentage');
+  const mediumPercentage = watch('mediumPercentage');
+  const lightPercentage = watch('lightPercentage');
+  const isCustomMix = heavyPercentage !== null;
+  const mixValue: WeightClassMix =
+    isCustomMix
+      ? { heavy: heavyPercentage as number, medium: mediumPercentage as number, light: lightPercentage as number }
+      : DEFAULT_WEIGHT_CLASS_MIX;
+
+  // Only the last of these three setValue calls should trigger validation —
+  // each call synchronously updates that one field, and (unlike the value
+  // update itself) `shouldValidate` runs the Zod resolver against whatever
+  // the form holds *at that instant*. Validating after every call meant the
+  // first one or two ran against a still-stale mix (the new heavy percentage
+  // alongside the old medium/light), which don't sum to 100 — transiently
+  // failing the all-or-nothing/sums-to-100 rule even though the three
+  // fields, once all applied, always do.
+  const handleMixChange = (next: WeightClassMix) => {
+    setValue('heavyPercentage', next.heavy);
+    setValue('mediumPercentage', next.medium);
+    setValue('lightPercentage', next.light, { shouldValidate: true });
+  };
+
+  const handleCustomMixToggle = (customize: boolean) => {
+    const next = customize ? DEFAULT_WEIGHT_CLASS_MIX : { heavy: null, medium: null, light: null };
+    setValue('heavyPercentage', next.heavy);
+    setValue('mediumPercentage', next.medium);
+    setValue('lightPercentage', next.light, { shouldValidate: true });
+  };
+
   const onSubmit = handleSubmit(async (values) => {
     const created = await execute(toCreateSimulationRequest(values));
     if (created) {
@@ -72,7 +106,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr]">
         <div className="flex flex-col gap-1">
           <label htmlFor="name" className="min-h-10 text-sm font-bold text-slate-800">
             Name of Simulation {REQUIRED_MARK}
@@ -91,24 +125,6 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
             )}
           />
           {errors.name && <small className="text-red-600">{errors.name.message}</small>}
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="min-h-10 text-sm font-bold text-slate-800">
-            Include Randomised Runway Closure Events? {REQUIRED_MARK}
-          </label>
-          <Controller
-            name="includeClosures"
-            control={control}
-            render={({ field }) => (
-              <SelectButton
-                value={field.value}
-                onChange={(e) => e.value !== null && field.onChange(e.value)}
-                options={CLOSURES_OPTIONS}
-                allowEmpty={false}
-              />
-            )}
-          />
         </div>
 
         <div className="flex flex-col gap-1">
@@ -242,7 +258,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="flex flex-col gap-1">
           <label htmlFor="weatherCondition" className="min-h-10 text-sm font-bold text-slate-800">
             Weather {REQUIRED_MARK}
@@ -263,82 +279,48 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="heavyPercentage" className="min-h-10 text-sm font-bold text-slate-800">
-            Heavy Aircraft % (optional)
+          <label className="min-h-10 text-sm font-bold text-slate-800">
+            Include Randomised Runway Closure Events? {REQUIRED_MARK}
           </label>
           <Controller
-            name="heavyPercentage"
+            name="includeClosures"
             control={control}
             render={({ field }) => (
-              <InputNumber
-                inputId="heavyPercentage"
+              <SelectButton
                 value={field.value}
-                onValueChange={(e) => field.onChange(e.value ?? null)}
-                min={0}
-                max={100}
-                suffix="%"
-                placeholder="Default mix"
-                className="w-full"
-                inputClassName="w-full"
+                onChange={(e) => e.value !== null && field.onChange(e.value)}
+                options={CLOSURES_OPTIONS}
+                allowEmpty={false}
               />
             )}
           />
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="mediumPercentage" className="min-h-10 text-sm font-bold text-slate-800">
-            Medium Aircraft % (optional)
+          <label className="min-h-10 text-sm font-bold text-slate-800">
+            Customize Aircraft Weight-Class Mix?
           </label>
-          <Controller
-            name="mediumPercentage"
-            control={control}
-            render={({ field }) => (
-              <InputNumber
-                inputId="mediumPercentage"
-                value={field.value}
-                onValueChange={(e) => field.onChange(e.value ?? null)}
-                min={0}
-                max={100}
-                suffix="%"
-                placeholder="Default mix"
-                className="w-full"
-                inputClassName="w-full"
-              />
-            )}
+          <SelectButton
+            value={isCustomMix}
+            onChange={(e) => e.value !== null && handleCustomMixToggle(e.value)}
+            options={CLOSURES_OPTIONS}
+            allowEmpty={false}
           />
         </div>
-
-        <div className="flex flex-col gap-1">
-          <label htmlFor="lightPercentage" className="min-h-10 text-sm font-bold text-slate-800">
-            Light Aircraft % (optional)
-          </label>
-          <Controller
-            name="lightPercentage"
-            control={control}
-            render={({ field }) => (
-              <InputNumber
-                inputId="lightPercentage"
-                value={field.value}
-                onValueChange={(e) => field.onChange(e.value ?? null)}
-                min={0}
-                max={100}
-                suffix="%"
-                placeholder="Default mix"
-                className="w-full"
-                inputClassName="w-full"
-              />
-            )}
-          />
-        </div>
-
-        {errors.heavyPercentage && (
-          <small className="text-red-600 sm:col-span-4">{errors.heavyPercentage.message}</small>
-        )}
-        <small className="text-slate-500 sm:col-span-4">
-          Leave all three blank to use the default Heavy/Medium/Light traffic mix; set all three
-          together (summing to 100%) to override it.
-        </small>
       </div>
+
+      {isCustomMix && (
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-bold text-slate-800">Aircraft Weight-Class Mix</label>
+          <WeightClassMixSlider value={mixValue} onChange={handleMixChange} />
+          <small className="text-slate-500">
+            Drag either divider to trade share between the two aircraft classes it separates.
+          </small>
+          {errors.heavyPercentage && (
+            <small className="text-red-600">{errors.heavyPercentage.message}</small>
+          )}
+        </div>
+      )}
 
       <RunwaySelectionField
         runwayIds={selectedRunwayIds}

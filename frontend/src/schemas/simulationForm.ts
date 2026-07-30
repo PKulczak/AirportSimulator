@@ -27,6 +27,10 @@ export const WEATHER_CONDITION_OPTIONS: { label: string; value: WeatherCondition
   { label: 'Low Visibility (IMC)', value: 'LowVisibility' },
 ];
 
+/** Mirrors the backend's `constants.DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES` — the
+ * starting point shown when a user turns on "customize the mix" from blank. */
+export const DEFAULT_WEIGHT_CLASS_MIX = { heavy: 10, medium: 75, light: 15 };
+
 /** Mirrors the backend's `SimulationCreationDto.MAX_RUNWAYS` cap. */
 export const MAX_RUNWAYS = 10;
 

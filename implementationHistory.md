@@ -26,6 +26,134 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-30 — Fix: mix slider intermittently showed a spurious "must sum to 100" error
+
+**Slice:** n/a (user-reported bug in the just-shipped weight-class-mix slider redesign)
+**Status:** Done
+
+**Symptom (reported):** dragging the new `WeightClassMixSlider` (or toggling "Customize
+Aircraft Weight-Class Mix?" on) sometimes showed the "must sum to 100" validation error, even
+though the slider's own construction guarantees the three values always sum to exactly 100.
+
+**Root cause:** `handleMixChange`/`handleCustomMixToggle` called `setValue` three times in a
+row — once per field — each with `{ shouldValidate: true }`. `setValue`'s value mutation is
+synchronous, but so is (the start of) the Zod-resolver validation it triggers: the first call
+(`setValue('heavyPercentage', ...)`) ran the whole-schema resolver against the form as it
+stood *at that instant* — the new heavy percentage alongside the still-old medium/light — an
+intermediate combination that generally doesn't sum to 100, briefly failing validation. The
+second and third calls then corrected it, but depending on exactly how React Hook Form
+resolved/re-rendered those three back-to-back validations, the stale failure could win and
+stick, especially under a fast drag firing many `pointermove`-driven calls per second.
+
+**Fix**
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — both
+  handlers now omit `shouldValidate` from the first two `setValue` calls and only pass it on
+  the third, so the resolver runs exactly once, after all three fields already hold their new,
+  consistent (summing-to-100) values — there's no longer an intermediate state to validate
+  against at all.
+
+**Verification**
+- `npx tsc -b --noEmit`, `npm run build`, `npm run lint`, and `npm run test` (46, unrelated)
+  all clean. Dev server's `tsc --watch` settled at 0 errors after the edit.
+- **Not visually verified in a browser** (no browser-automation tool available in this
+  environment) — reasoned through the fix rather than confirmed by dragging it; the previous
+  entry's same limitation still applies to this component overall.
+
+**Notes**
+- General lesson for this codebase: whenever a single logical change touches more than one
+  `react-hook-form` field via multiple `setValue` calls, only the *last* call should carry
+  `shouldValidate: true` if the fields are cross-validated together (as `heavyPercentage`/
+  `mediumPercentage`/`lightPercentage` are) — validating after every individual call exposes
+  every intermediate, partially-applied state to the resolver.
+
+## 2026-07-30 — Redesign: Heavy/Medium/Light mix as a draggable stacked bar
+
+**Slice:** n/a (user-requested UX redesign of Slice 7.1's weight-class-mix input)
+**Status:** Done (code clean, not visually verified in a browser — see Verification)
+
+**Request:** replace the three separate Heavy/Medium/Light percentage number inputs in the
+create form with a single bar with two draggable dividers (a stacked-proportion slider).
+
+**Frontend**
+- [frontend/src/components/WeightClassMixSlider.tsx](frontend/src/components/WeightClassMixSlider.tsx)
+  (new) — a self-contained, presentation-only component: a horizontal bar with three colored
+  segments (Heavy/Medium/Light, darkest-to-lightest) sized by percentage width, and two
+  draggable dividers between them. Dragging the Heavy/Medium divider trades share between
+  just those two (Light untouched); dragging the Medium/Light divider trades between those
+  two (Heavy untouched) — each divider clamps against the other so they can never cross,
+  which is also what keeps the three values always summing to exactly 100 by construction
+  (no renormalization step needed). Built on the Pointer Events API (covers mouse/touch/pen
+  uniformly) with `setPointerCapture` so a fast drag keeps tracking the divider even if the
+  pointer strays off its small hit area; window-level `pointermove`/`pointerup` listeners are
+  attached once (via a ref holding the latest value/onChange) rather than re-attached on every
+  pixel of movement. Each divider is also a keyboard-operable `role="slider"` (arrow keys nudge
+  by 1%) with proper `aria-value*` attributes.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) — added
+  `DEFAULT_WEIGHT_CLASS_MIX` (`{heavy: 10, medium: 75, light: 15}`, mirroring the backend's
+  `constants.DEFAULT_WEIGHT_CLASS_MIX_PERCENTAGES`), the starting position shown when a user
+  turns customization on from blank.
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — the
+  three `heavyPercentage`/`mediumPercentage`/`lightPercentage` `InputNumber`s are gone;
+  replaced with a "Customize Aircraft Weight-Class Mix?" Yes/No toggle (reusing the existing
+  closures-style `SelectButton`) next to the Weather dropdown, and — only when toggled on —
+  the new slider below it. Toggling on writes `DEFAULT_WEIGHT_CLASS_MIX` into all three form
+  fields (so what's shown always matches what's actually about to be submitted, rather than
+  displaying a default the form doesn't yet hold); toggling off nulls all three, identical to
+  the prior "leave blank" behaviour. No schema/validation changes — `simulationFormSchema`'s
+  all-or-nothing-summing-to-100 rule is unchanged and unreachable from this UI by construction
+  (the slider only ever produces three already-summing-to-100 integers), so the existing
+  validation-error rendering (`errors.heavyPercentage`) is kept as a defensive fallback rather
+  than removed.
+
+**Verification**
+- `npx tsc -b --noEmit`, `npm run build`, `npm run lint`, and `npm run test` (46, unrelated —
+  no schema/type change, so no new tests were added or needed; the existing weight-class-mix
+  schema/conversion tests from Slice 7.1 still cover the underlying data shape this component
+  now edits) all clean.
+- **Not visually verified in a browser** (no browser-automation tool available in this
+  environment) — reasoned through the drag/clamp math by hand (both dividers clamp against
+  each other so they can never cross; each drag recomputes the third value from the other two
+  rather than adjusting deltas, so rounding drift can't accumulate) rather than confirmed by
+  actually dragging it. The dev server's `tsc --watch` output was checked after every edit
+  (including the final pointer-capture addition) and settled at 0 errors, but that only proves
+  the code compiles, not that the drag interaction feels right on screen.
+
+**Notes**
+- Deliberately scoped to `RequestForm.tsx` only, matching where the three inputs being
+  replaced actually lived — `SweepForm.tsx` still has no weight-class-mix UI at all (a
+  pre-existing scope cut from Slice 7.1, unrelated to and unchanged by this request).
+
+## 2026-07-30 — Fix: sweep form had no way to set the weather condition
+
+**Slice:** n/a (user-requested follow-up closing a scope cut noted in the Slice 7.2 entry
+below)
+**Status:** Done
+
+**Request:** the create form (`RequestForm.tsx`) already had a Weather dropdown from Slice
+7.2, but the sweep form (`SweepForm.tsx`) didn't — the sweep DTO/schema already accepted and
+validated `weatherCondition`, but there was no UI input to actually set it, a scope cut
+explicitly called out in the Slice 7.2 entry's Notes.
+
+**Frontend**
+- [frontend/src/components/SweepForm.tsx](frontend/src/components/SweepForm.tsx) — added a
+  Weather `Dropdown` (reusing `WEATHER_CONDITION_OPTIONS`, same as `RequestForm.tsx`) to the
+  top row, next to Random Seed — widened that row's grid template from
+  `[2fr_1fr_1fr]` (Name/Closures/Seed) to `[2fr_1fr_1fr_1fr]` to fit it, with a hint that it
+  applies to every run in the sweep (matching the existing Random Seed hint's phrasing for
+  "applies to every run").
+
+**Verification**
+- `npx tsc -b --noEmit`, `npm run build`, `npm run lint`, and `npm run test` (46, unrelated —
+  `sweepFormSchema`'s `weatherCondition` handling was already covered by Slice 7.2's tests;
+  this change only adds a UI input for a field the schema already validated) all clean.
+- Frontend dev server picked up the change live via Vite/tsc watch (confirmed 0 compile
+  errors after the edit); not visually verified in a browser (no browser-automation tool
+  available in this environment).
+
+**Notes**
+- No backend change needed — the sweep endpoint already accepted and applied
+  `weatherCondition` to every generated run (Slice 7.2).
+
 ## 2026-07-30 — Slice 7.2 — Weather as a scenario parameter
 
 **Slice:** 7.2 — Weather as a scenario parameter (Epic 7, Engine fidelity)
@@ -99,7 +227,8 @@ change). Keep entries factual and specific — what changed, where, and how it w
   every other whole-run config value) was judged sufficient.
 - **`SweepForm.tsx` UI left untouched** — same deliberate scope cut as Slice 7.1's weight-
   class mix: the sweep DTO/schema fully validate and pass a fixed `weatherCondition` through
-  today, just with no UI input for it yet.
+  today, just with no UI input for it yet. *(Closed the same day — see the "sweep form had
+  no way to set the weather condition" entry above.)*
 
 **Verification**
 - New [backend/tests/simulation/weather_test.py](backend/tests/simulation/weather_test.py)
