@@ -27,3 +27,9 @@ PASSWORD_HASHERS = [
 CHANNEL_LAYERS = {
     "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"},
 }
+
+# Pinned rather than inherited from backend.settings's env.bool() read of the
+# developer's actual backend/.env — otherwise the test suite's pass/fail
+# depends on whatever REQUIRE_AUTH happens to be set to on disk locally.
+# Individual tests opt into REQUIRE_AUTH=True via override_settings.
+REQUIRE_AUTH = False

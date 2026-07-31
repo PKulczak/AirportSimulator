@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from api.managers.simulation_manager import SimulationManager
@@ -57,6 +58,17 @@ class Simulation(models.Model):
     # the batch grouping shouldn't delete the underlying run results.
     batch = models.ForeignKey(
         "api.SimulationBatch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="simulations",
+    )
+    # Nullable: null means "no owner" — either created before this field
+    # existed, or created by an anonymous request while REQUIRE_AUTH is off
+    # (see SimulationViewset.create). SET_NULL rather than CASCADE: deleting a
+    # user account shouldn't delete their run history.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,

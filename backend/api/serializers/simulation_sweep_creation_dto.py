@@ -134,12 +134,15 @@ class SimulationSweepCreationDto(serializers.Serializer):
 
     def create(self, validated_data):
         run_configs = validated_data.pop("_run_configs")
+        # Not a declared field — passed through via `serializer.save(owner=...)`
+        # in SimulationViewset.sweep, same as the single-create path.
+        owner = validated_data.pop("owner", None)
         with transaction.atomic():
             batch = SimulationBatch.objects.create(
                 swept_variable=validated_data["variable"]
             )
             simulations = [
-                SimulationCreationDto().create({**config, "batch": batch})
+                SimulationCreationDto().create({**config, "batch": batch, "owner": owner})
                 for config in run_configs
             ]
         return simulations

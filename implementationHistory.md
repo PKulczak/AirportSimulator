@@ -26,6 +26,170 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-31 — Fix: login page password box width + toggle icon centring
+
+**Slice:** n/a (user-requested follow-up polish on Slice 9.1's login screen)
+**Status:** Done
+
+**Changes**
+- [frontend/src/index.css](frontend/src/index.css) — added `.p-icon-field { width: 100%; }`
+  plus a `.p-icon-field > .p-input-icon` override (`top: 50%; margin-top: 0;
+  transform: translateY(-50%);`). Root cause: PrimeReact's `Password` component, when
+  `toggleMask` is set, wraps its `<input>` in an internal `.p-icon-field` div that does
+  *not* stretch to fill its container by default — the earlier fix (giving both fields
+  `w-full`) only widened the outer wrapper, not this inner div, so the password box still
+  rendered narrower than the username `InputText` despite both having `w-full`. PrimeReact's
+  own built-in fix for this is a `.p-fluid` ancestor class, but that also forces buttons/
+  dropdowns to full width, which isn't wanted here, so it's overridden directly and scoped to
+  just `.p-icon-field`. Also swapped the toggle icon's centring from the theme's fixed
+  `margin-top: -0.5rem` (which only centres an icon that's exactly the assumed 1rem tall) to
+  a `transform: translateY(-50%)`, which centres it regardless of the icon's actual rendered
+  size.
+- Confirmed both new rules are unlayered plain CSS appearing *after* PrimeReact's own theme
+  import in the same file, so — with identical selector specificity to the rules they
+  override — they win the cascade tie on source order, and aren't shadowed by Tailwind v4's
+  own cascade layers (Tailwind wraps its utilities in `@layer theme, base, components,
+  utilities`, which unlayered CSS always beats regardless of import order).
+- `Password`/`IconField` usage is confined to this one login page in the whole frontend
+  (checked via a repo-wide search), so this global override has no other surface to affect.
+
+**Verification**
+- `npx tsc -b --noEmit` and `npm run lint` — both clean (CSS-only change; no `.tsx` edits).
+- Verified live against the running `npm run dev` instance rather than a full restart — this
+  is a CSS-only change and Vite's dev server already serves `index.css` through its own hot
+  CSS pipeline, so a restart wouldn't prove anything a live content check doesn't already
+  confirm more directly: fetched the served, transformed stylesheet from the dev server and
+  confirmed both new rules are present, appear after PrimeReact's original conflicting rule
+  (as intended for the cascade tie-break above), and aren't stripped/overridden.
+- **Not verified by eye in a real browser** — no browser-automation tool is available in this
+  environment (same caveat as the earlier replay-scrub fix in this project's history); the fix
+  is reasoned from PrimeReact's actual shipped CSS/component source (inspected directly in
+  `node_modules/primereact`) rather than guessed, but hasn't been visually confirmed pixel-for-
+  pixel. Flagging this explicitly rather than claiming full verification.
+
+**Notes**
+- Considered using PrimeReact's `pt` (passthrough) prop on the `<Password>` element instead of
+  a global CSS override (e.g. `pt={{ iconField: { className: 'w-full' } }}`), which would have
+  kept the fix JSX-local. Went with CSS instead because the icon-centring half needs the
+  `inputIcon` passthrough key, which exists at runtime but isn't in this PrimeReact version's
+  TypeScript types (`PasswordPassThroughOptions`) — would've needed an ugly type-cast. This
+  file already has an established "re-theme PrimeReact's built-ins" section for exactly this
+  kind of override, so a plain CSS rule fits the codebase's existing convention better anyway.
+
+## 2026-07-31 — Admin account that bypasses ownership scoping
+
+**Slice:** n/a (user-requested follow-up on Slice 9.2's per-user ownership)
+**Status:** Done
+
+**Changes**
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) —
+  `get_queryset()`'s owner filter is now skipped for `request.user.is_staff` (Django's
+  standard "admin" flag), so a staff account sees every user's runs across every action
+  (list, detail, visualisation, config, export.csv, cancel, rename, delete, batch), not just
+  its own — same uniform scoping point Slice 9.2 already funnelled every action through, so
+  this was a one-line condition change rather than touching each action individually.
+- Created a real `admin` user on the live dev Postgres DB (`is_staff=True`,
+  `is_superuser=True`, so it also works for `/admin/` if wanted) with a generated 16-character
+  password — reported to the user directly rather than logged here. The user chose a new,
+  separate account over promoting their existing `pkulczak` login when asked.
+
+**Verification**
+- [backend/tests/feature/simulation_ownership_test.py](backend/tests/feature/simulation_ownership_test.py)
+  — added `test_staff_list_returns_every_users_runs` and `test_staff_can_reach_another_users_run`
+  (a staff account set up alongside the existing alice/bob users in `setUp`). Full backend
+  suite: `pytest` → 279 passed (was 277; +2 staff-bypass tests).
+- Frontend untouched; no FE changes needed (login screen already exists from Slice 9.1 and
+  works for any user regardless of `is_staff`).
+- Live-verified against the real dev stack: logged in as the new `admin` account via
+  `POST /api/auth/login/`, created one simulation each under two temporary throwaway users,
+  confirmed `admin`'s `GET /api/simulations/?search=...` returned both (count 2) and both
+  `/detail/` endpoints returned 200 for `admin` — then deleted the temporary simulations and
+  users.
+- Checked for stray processes before and after restarting all three dev processes (same
+  recurring runserver StatReloader self-multiplication noted in the last two entries —
+  killed the full process tree via `taskkill //F //T //PID <root>` each time and confirmed a
+  live 401 from a fresh instance before considering it done).
+
+**Notes**
+- Deliberately used `is_staff` (not a new custom permission/role field) — this app has no
+  broader permissions model, and `is_staff` is Django's existing, standard "this is an admin"
+  flag; `manage.py createsuperuser`/`is_superuser=True` accounts already imply it.
+
+## 2026-07-31 — Slice 9.2 — Per-user ownership
+
+**Slice:** 9.2 — Per-user ownership
+**Status:** Done
+
+**Changes**
+- [backend/api/models/simulation.py](backend/api/models/simulation.py) — added a nullable
+  `owner` FK to `settings.AUTH_USER_MODEL` (`on_delete=SET_NULL`, `related_name="simulations"`).
+  Nullable rather than required: null means "no owner" — either a run created before this
+  field existed, or created by an anonymous request while `REQUIRE_AUTH` is off (see Slice 9.1).
+  `SET_NULL` so deleting a user account doesn't delete their run history.
+- [backend/api/migrations/0013_simulation_owner.py](backend/api/migrations/0013_simulation_owner.py)
+  (generated, applied to the dev Postgres DB).
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) —
+  `get_queryset()` now filters to `owner=request.user` whenever there's a real authenticated
+  user (independent of `REQUIRE_AUTH`, which only controls whether authentication is
+  *mandatory*), and is applied uniformly to every action (list, the `detail`/`config`/
+  `visualisation`/`export.csv`/`cancel` custom actions, and the router's own
+  update/destroy) rather than just list/retrieve, so a user can't reach another user's run by
+  id through any route. An anonymous request (REQUIRE_AUTH off, no credentials) still sees
+  every run, matching pre-9.2 open-API behaviour — there's no owner to scope by without a real
+  caller. `create()` and `sweep()` now pass `serializer.save(owner=self._owner())` so new runs
+  are stamped with the creating user (or null, anonymously). The `batch` action's DELETE branch
+  is now also owner-scoped (`self.get_queryset().filter(batch_id=...)`), closing a related gap
+  where a user could otherwise delete another user's sweep runs by guessing/knowing the batch id.
+- [backend/api/serializers/simulation_sweep_creation_dto.py](backend/api/serializers/simulation_sweep_creation_dto.py)
+  — `create()` pops an `owner` key (passed through via `serializer.save(owner=...)`, not a
+  declared field) and threads it into every per-step `SimulationCreationDto().create(...)` call
+  so every run in a sweep is stamped with the same owner as the request that created the sweep.
+- [backend/tests/settings_test.py](backend/tests/settings_test.py) — pinned
+  `REQUIRE_AUTH = False` explicitly, alongside the other test-only overrides (sqlite DB, stub
+  broker, in-memory channel layer). Found while writing this slice's tests: the module
+  previously did `from backend.settings import *` with no override, so `REQUIRE_AUTH` was
+  whatever `backend/.env` said on the machine running pytest — it silently inherited `True`
+  from the developer's own `.env` (set intentionally for their local dev server during Slice
+  9.1's follow-up), which broke `auth_test.py`'s `test_simulations_list_is_open_by_default_with_no_credentials`
+  and would have made this slice's anonymous-request tests non-deterministic across machines/CI.
+  Not part of the ownership feature itself, but a prerequisite to get a reliable green suite.
+
+**Verification**
+- New [backend/tests/feature/simulation_ownership_test.py](backend/tests/feature/simulation_ownership_test.py)
+  (14 tests): owner set on create (authenticated + anonymous), owner set on every sweep-generated
+  run, list scoped to the authenticated user vs. anonymous seeing everything, and 404s (not just
+  omission) for another user's run across detail/visualisation/config/export.csv/cancel/rename/
+  delete, plus one confirming an anonymous request still reaches any run.
+- Full backend suite: `pytest` → 277 passed (was 263 before this slice; +14 ownership tests).
+- Frontend untouched by this slice; sanity-checked `npx tsc -b --noEmit` and `npm run lint`
+  anyway — both clean.
+- Live-verified against the real dev Postgres/Redis/dramatiq stack: created two real users
+  (`owna`/`ownb`) with tokens via `manage.py shell`, created one simulation as each via
+  `POST /api/simulations/`, confirmed each user's `GET /api/simulations/?search=...` only shows
+  their own run, confirmed `owna` gets 404 on `ownb`'s `/detail/` and `/cancel/`, confirmed
+  `ownb` gets 200 on their own `/detail/` — then cleaned up both test simulations and users.
+  Both live-created simulations also ran to completion via the real dramatiq worker during this
+  check, confirming ownership stamping doesn't interfere with the run pipeline.
+- Checked for stray processes before and after restarting: found the `runserver` process had
+  again multiplied into a chain of 4 python processes shortly after every single fresh launch
+  in this session (same recurring StatReloader-restart-without-killing-predecessor pattern
+  documented in the last several entries) — this time reproduced with **zero** file edits
+  between restarts, confirming it's a spontaneous environment/Windows quirk of this project's
+  `manage.py runserver`, not something triggered by editing files while the reloader watches.
+  Killed the full chain each time via `taskkill //F //T //PID`, and after the final restart
+  confirmed via `Get-NetTCPConnection` against the Redis broker host that only the current
+  dramatiq worker's own `multiprocessing.spawn_main` children (correct parent PID, correct
+  creation timestamp) and the current runserver's innermost child held a live connection —
+  no leftover orphans from earlier in the session.
+
+**Notes**
+- Scoping deliberately does **not** extend to `Template`/`SimulationBatch` — the slice text
+  says "FK owner on Simulation" specifically, and `SimulationBatch` has no owner column;
+  `GET`/`DELETE /api/simulations/batch/` still looks up the `SimulationBatch` row itself
+  unscoped (so its `sweptVariable` metadata is technically visible to any authenticated user
+  who knows/guesses a batch id), but the actual `Simulation` rows behind it are scoped, so no
+  per-aircraft data leaks — flagged here rather than silently expanded beyond what was asked.
+
 ## 2026-07-31 — Polish: logout button cursor + login field widths
 
 **Slice:** n/a (user-requested follow-up polish on Slice 9.1's auth UI)

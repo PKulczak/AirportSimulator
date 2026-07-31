@@ -47,9 +47,25 @@ class SimulationViewset(
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
+        # Slice 9.2: scoped to the requesting user's own runs whenever
+        # there's a real authenticated user (regardless of REQUIRE_AUTH) —
+        # this applies uniformly to every action below, not just list/detail,
+        # so a user can't reach another user's run by id via any other
+        # action either. An anonymous request (REQUIRE_AUTH off, no
+        # credentials) sees every run, matching pre-9.2 open-API behaviour —
+        # there's no "owner" to scope by without a real caller. Staff accounts
+        # (Django admin's `is_staff`) are exempt from the owner filter — an
+        # admin needs to see every user's runs, not just their own.
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.is_authenticated and not user.is_staff:
+            queryset = queryset.filter(owner=user)
         if self.action == "list":
-            return Simulation.objects.for_history()
-        return super().get_queryset()
+            return queryset.for_history()
+        return queryset
+
+    def _owner(self):
+        return self.request.user if self.request.user.is_authenticated else None
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -63,7 +79,7 @@ class SimulationViewset(
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        simulation = serializer.save()
+        simulation = serializer.save(owner=self._owner())
 
         run_simulation.send(simulation.id)
 
@@ -75,7 +91,7 @@ class SimulationViewset(
 
     @action(detail=True, methods=["get"], url_path="detail", url_name="detail")
     def simulation_detail(self, request, pk=None):
-        simulation = get_object_or_404(Simulation.objects.with_detail(), pk=pk)
+        simulation = get_object_or_404(self.get_queryset().with_detail(), pk=pk)
         serializer = SimulationDetailDto(simulation)
         return Response(serializer.data)
 
@@ -83,7 +99,7 @@ class SimulationViewset(
     def sweep(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        simulations = serializer.save()
+        simulations = serializer.save(owner=self._owner())
 
         for simulation in simulations:
             run_simulation.send(simulation.id)
@@ -112,11 +128,11 @@ class SimulationViewset(
             # deleted explicitly first (cascading to their aircraft/events),
             # then the now-empty batch itself.
             with transaction.atomic():
-                Simulation.objects.filter(batch_id=batch.id).delete()
+                self.get_queryset().filter(batch_id=batch.id).delete()
                 batch.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
-        simulations = Simulation.objects.with_detail_for_batch(batch.id)
+        simulations = self.get_queryset().with_detail_for_batch(batch.id)
         serializer = SimulationDetailDto(simulations, many=True)
         return Response(
             {
@@ -148,7 +164,7 @@ class SimulationViewset(
 
         simulations_by_id = {
             simulation.id: simulation
-            for simulation in Simulation.objects.with_detail_for_ids(ids)
+            for simulation in self.get_queryset().with_detail_for_ids(ids)
         }
         # Silently drop any id that doesn't exist, same as filter(id__in=...)
         # would — the caller can tell which ids were found from the response.
@@ -158,7 +174,7 @@ class SimulationViewset(
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
-        simulation = get_object_or_404(Simulation, pk=pk)
+        simulation = get_object_or_404(self.get_queryset(), pk=pk)
         if simulation.status in Simulation.TERMINAL_STATUSES:
             return Response(
                 {"detail": f"Simulation is already {simulation.get_status_display()}."},
@@ -183,20 +199,20 @@ class SimulationViewset(
     @action(detail=True, methods=["get"])
     def config(self, request, pk=None):
         simulation = get_object_or_404(
-            Simulation.objects.prefetch_related("simulation_runways__closure_events"),
+            self.get_queryset().prefetch_related("simulation_runways__closure_events"),
             pk=pk,
         )
         return Response(SimulationConfigDto(simulation).data)
 
     @action(detail=True, methods=["get"])
     def visualisation(self, request, pk=None):
-        simulation = get_object_or_404(Simulation.objects.for_visualisation(), pk=pk)
+        simulation = get_object_or_404(self.get_queryset().for_visualisation(), pk=pk)
         serializer = SimulationVisualisationDto(simulation)
         return Response(serializer.data)
 
     @action(detail=True, methods=["get"], url_path="export.csv", url_name="export-csv")
     def export_csv(self, request, pk=None):
-        simulation = get_object_or_404(Simulation, pk=pk)
+        simulation = get_object_or_404(self.get_queryset(), pk=pk)
         writer = csv.writer(_Echo())
         rows = (writer.writerow(row) for row in aircraft_csv_rows(simulation))
         response = StreamingHttpResponse(rows, content_type="text/csv")

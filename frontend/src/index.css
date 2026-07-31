@@ -114,6 +114,24 @@ body {
   background: var(--color-brand-accent);
 }
 
+/* Password's toggle-mask icon (login screen) wraps its input in a
+ * `.p-icon-field` div that doesn't stretch to fill its container by
+ * default — PrimeReact's own fix for this is a `.p-fluid` ancestor class,
+ * but that also widens buttons/dropdowns we don't want touched, so it's
+ * overridden directly here instead. Without this the password box renders
+ * narrower than a plain InputText despite both having `w-full`. The toggle
+ * icon is also re-centred with `transform` rather than the theme's fixed
+ * `-0.5rem` margin, which only centres it when the icon is exactly 1rem
+ * tall. */
+.p-icon-field {
+  width: 100%;
+}
+.p-icon-field > .p-input-icon {
+  top: 50%;
+  margin-top: 0;
+  transform: translateY(-50%);
+}
+
 .p-selectbutton .p-button.p-highlight,
 .p-selectbutton .p-button.p-highlight .p-button-icon-left,
 .p-selectbutton .p-button.p-highlight .p-button-icon-right {
