@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework.authtoken",
     "corsheaders",
     "channels",
     "django_dramatiq",
@@ -174,7 +175,28 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework.authentication.TokenAuthentication",
+        # Only ever actually used via the Django admin / browsable API — the
+        # frontend's axios instance never sends session cookies (no
+        # `withCredentials`), so this never fires for real SPA traffic.
+        "rest_framework.authentication.SessionAuthentication",
+    ),
+    # Gated by REQUIRE_AUTH (see api.permissions) rather than a flat
+    # IsAuthenticated — see Slice 9.1 in nextSteps.md: auth is wired end to
+    # end but every endpoint stays open by default until REQUIRE_AUTH is
+    # explicitly turned on for a deployment.
+    "DEFAULT_PERMISSION_CLASSES": (
+        "api.permissions.IsAuthenticatedUnlessAuthDisabled",
+    ),
 }
+
+# Slice 9.1 — Authentication. False by default so existing dev/CI workflows
+# (and every other test in this suite) keep working unauthenticated; flip to
+# True once the frontend login flow has been confirmed end to end and at
+# least one real user exists to log in as (Django has no self-serve signup —
+# provision users via `manage.py createsuperuser` or the admin).
+REQUIRE_AUTH = env.bool("REQUIRE_AUTH", default=False)
 
 JSON_CAMEL_CASE = {
     "RENDERER_CLASS": "rest_framework.renderers.JSONRenderer",

@@ -16,6 +16,7 @@ import {
   faCodeCompare,
   faCopy,
   faEllipsisVertical,
+  faFileImport,
   faLayerGroup,
   faPen,
   faPlaneArrival,
@@ -34,6 +35,7 @@ import { STATUS_SEVERITY } from '../functions/statusSeverity';
 import {
   configToFormValues,
   SIMULATION_NAME_MAX,
+  templateToFormValues,
   validateSimulationName,
   type SimulationFormValues,
 } from '../schemas/simulationForm';
@@ -44,8 +46,10 @@ import type {
   SimulationStatus,
   SweepVariable,
 } from '../types/simulation';
+import type { Template } from '../types/template';
 import SimulationFormDialog from './SimulationFormDialog';
 import SweepFormDialog from './SweepFormDialog';
+import TemplatePickerDialog from './TemplatePickerDialog';
 import backgroundImage from '../assets/Background.png';
 
 const PAGE_SIZE = 10;
@@ -102,6 +106,11 @@ export default function SimulationHistory() {
   const [search, setSearch] = useState('');
   const [dialogVisible, setDialogVisible] = useState(false);
   const [formInitialValues, setFormInitialValues] = useState<SimulationFormValues | undefined>();
+  // Distinguishes *why* the create dialog has `formInitialValues` set, purely
+  // to pick the right header text — Duplicate and "from template" both
+  // pre-fill the same form but mean different things to the user.
+  const [formSource, setFormSource] = useState<'create' | 'duplicate' | 'template'>('create');
+  const [templatePickerVisible, setTemplatePickerVisible] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Simulation | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -247,6 +256,7 @@ export default function SimulationHistory() {
 
   const openCreate = () => {
     setDuplicateError(null);
+    setFormSource('create');
     setFormInitialValues(undefined);
     setDialogVisible(true);
   };
@@ -257,12 +267,28 @@ export default function SimulationHistory() {
       const { data } = await apiClient.get<SimulationConfig>(
         `/api/simulations/${simulation.id}/config/`,
       );
+      setFormSource('duplicate');
       setFormInitialValues(configToFormValues(data));
       setDialogVisible(true);
     } catch {
       setDuplicateError('Failed to load that run’s configuration. Please try again.');
     }
   };
+
+  const openFromTemplate = (template: Template) => {
+    setDuplicateError(null);
+    setFormSource('template');
+    setFormInitialValues(templateToFormValues(template));
+    setTemplatePickerVisible(false);
+    setDialogVisible(true);
+  };
+
+  const formDialogTitle =
+    formSource === 'duplicate'
+      ? 'Duplicate Simulation'
+      : formSource === 'template'
+        ? 'Create From Template'
+        : undefined;
 
   const confirmCancel = async () => {
     if (!cancelTarget) {
@@ -375,6 +401,11 @@ export default function SimulationHistory() {
               className="w-full max-w-sm justify-self-center bg-brand-bg"
             />
             <div className="flex justify-self-end gap-2">
+              <Button
+                icon={<FontAwesomeIcon icon={faFileImport} />}
+                label="Templates"
+                onClick={() => setTemplatePickerVisible(true)}
+              />
               <Button
                 icon={<FontAwesomeIcon icon={faLayerGroup} />}
                 label="Sweep"
@@ -648,9 +679,11 @@ export default function SimulationHistory() {
       <SimulationFormDialog
         visible={dialogVisible}
         initialValues={formInitialValues}
+        title={formDialogTitle}
         onHide={() => {
           setDialogVisible(false);
           setFormInitialValues(undefined);
+          setFormSource('create');
         }}
         onCreated={() => refetch()}
       />
@@ -659,6 +692,12 @@ export default function SimulationHistory() {
         visible={sweepDialogVisible}
         onHide={() => setSweepDialogVisible(false)}
         onDone={() => refetch()}
+      />
+
+      <TemplatePickerDialog
+        visible={templatePickerVisible}
+        onHide={() => setTemplatePickerVisible(false)}
+        onSelect={openFromTemplate}
       />
 
       <Dialog

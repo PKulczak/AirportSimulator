@@ -5,14 +5,17 @@ import {
   detailToRerunRequest,
   simulationFormSchema,
   sweepFormSchema,
+  templateToFormValues,
   toCreateSimulationRequest,
   toCreateSweepRequest,
+  toCreateTemplateRequest,
   validateSimulationName,
   type SimulationFormValues,
   type SweepFormValues,
 } from './simulationForm';
 import type { SimulationConfig } from '../types/simulation';
 import type { SimulationDetail } from '../types/metrics';
+import type { Template } from '../types/template';
 
 function validFormValues(overrides: Partial<SimulationFormValues> = {}): SimulationFormValues {
   return {
@@ -424,5 +427,96 @@ describe('detailToRerunRequest', () => {
 
   it('carries the weather condition through', () => {
     expect(detailToRerunRequest(sampleDetail).weatherCondition).toBe('Windy');
+  });
+});
+
+describe('templateToFormValues', () => {
+  const sampleTemplate: Template = {
+    id: 9,
+    name: 'Peak Summer Storm',
+    arrivalRatePerHour: 20,
+    departureRatePerHour: 10,
+    durationMinutes: 60,
+    maxWaitMinutes: 20,
+    aircraftSpeedKnots: 140,
+    includeClosures: false,
+    randomSeed: 42,
+    heavyPercentage: 20,
+    mediumPercentage: 60,
+    lightPercentage: 20,
+    weatherCondition: 'Snow',
+    runways: [
+      { runwayId: 1, operatingMode: 'Mixed', operationalStatus: 'Available' },
+      { runwayId: 2, operatingMode: 'ArrivalsOnly' },
+    ],
+    createdAt: '2026-01-01T00:00:00Z',
+  };
+
+  it('leaves the simulation name blank rather than copying the template name', () => {
+    expect(templateToFormValues(sampleTemplate).name).toBe('');
+  });
+
+  it('maps each runway into id-keyed mode/status records, defaulting a missing status to Available', () => {
+    const values = templateToFormValues(sampleTemplate);
+    expect(values.runwayIds).toEqual([1, 2]);
+    expect(values.runwayModes).toEqual({ '1': 'Mixed', '2': 'ArrivalsOnly' });
+    expect(values.runwayInitialStatus).toEqual({ '1': 'Available', '2': 'Available' });
+  });
+
+  it('carries the seed and weight-class mix through', () => {
+    const values = templateToFormValues(sampleTemplate);
+    expect(values.randomSeed).toBe(42);
+    expect(values.heavyPercentage).toBe(20);
+    expect(values.mediumPercentage).toBe(60);
+    expect(values.lightPercentage).toBe(20);
+  });
+
+  it('carries the weather condition through', () => {
+    expect(templateToFormValues(sampleTemplate).weatherCondition).toBe('Snow');
+  });
+});
+
+describe('toCreateTemplateRequest', () => {
+  it('uses the separately-provided template name, trimmed, not the form\'s own name field', () => {
+    const request = toCreateTemplateRequest(
+      '  Rush Hour Baseline  ',
+      validFormValues({ name: 'Some Simulation Name' }),
+    );
+    expect(request.name).toBe('Rush Hour Baseline');
+  });
+
+  it('omits randomSeed entirely when null', () => {
+    const request = toCreateTemplateRequest('Baseline', validFormValues({ randomSeed: null }));
+    expect(request).not.toHaveProperty('randomSeed');
+  });
+
+  it('includes randomSeed when set', () => {
+    const request = toCreateTemplateRequest('Baseline', validFormValues({ randomSeed: 42 }));
+    expect(request.randomSeed).toBe(42);
+  });
+
+  it('omits the weight-class mix entirely when left blank', () => {
+    const request = toCreateTemplateRequest('Baseline', validFormValues());
+    expect(request).not.toHaveProperty('heavyPercentage');
+  });
+
+  it('includes the weight-class mix when set', () => {
+    const request = toCreateTemplateRequest(
+      'Baseline',
+      validFormValues({ heavyPercentage: 20, mediumPercentage: 60, lightPercentage: 20 }),
+    );
+    expect(request.heavyPercentage).toBe(20);
+    expect(request.mediumPercentage).toBe(60);
+    expect(request.lightPercentage).toBe(20);
+  });
+
+  it('maps runwayIds/runwayModes/runwayInitialStatus into the runways array', () => {
+    const request = toCreateTemplateRequest(
+      'Baseline',
+      validFormValues({ runwayIds: [1], runwayModes: { '1': 'Mixed' }, runwayInitialStatus: {} }),
+    );
+    expect(request.runways).toEqual([
+      { runwayId: 1, operatingMode: 'Mixed', operationalStatus: 'Available' },
+    ]);
   });
 });

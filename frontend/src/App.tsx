@@ -6,6 +6,7 @@ import SimulationVisualisation from './components/SimulationVisualisation';
 import SimulationPrintSummary from './components/SimulationPrintSummary';
 import CompareRuns from './components/CompareRuns';
 import SweepResults from './components/SweepResults';
+import LoginPage from './components/LoginPage';
 import PageNotFound from './components/PageNotFound';
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
         <Route path="/simulation/:id/print" element={<SimulationPrintSummary />} />
         <Route path="/compare" element={<CompareRuns />} />
         <Route path="/batch/:batchId" element={<SweepResults />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<PageNotFound />} />
       </Route>
     </Routes>

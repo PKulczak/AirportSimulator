@@ -8,6 +8,7 @@ import type {
 } from '../types/simulation';
 import type { SimulationDetail } from '../types/metrics';
 import type { OperatingMode, OperationalStatus } from '../types/runway';
+import type { CreateTemplateRequest, Template } from '../types/template';
 
 export const operatingModeSchema = z.enum(['ArrivalsOnly', 'DeparturesOnly', 'Mixed']);
 
@@ -347,6 +348,68 @@ export function toCreateSimulationRequest(
     // Omit entirely when blank so the backend treats it as "no seed" (random).
     ...(values.randomSeed != null ? { randomSeed: values.randomSeed } : {}),
     // Validation guarantees all three or none are set — checking one is enough.
+    ...(values.heavyPercentage != null
+      ? {
+          heavyPercentage: values.heavyPercentage,
+          mediumPercentage: values.mediumPercentage as number,
+          lightPercentage: values.lightPercentage as number,
+        }
+      : {}),
+    runways: values.runwayIds.map((runwayId) => ({
+      runwayId,
+      operatingMode: values.runwayModes[String(runwayId)] as OperatingMode,
+      operationalStatus:
+        (values.runwayInitialStatus[String(runwayId)] as OperationalStatus) ?? 'Available',
+    })),
+  };
+}
+
+/** Maps a saved Template into create-form values (the template-picker flow).
+ * Unlike `configToFormValues`, `name` is deliberately left blank rather than
+ * copied from anywhere: `Template.name` identifies the saved preset itself,
+ * not a simulation — the user always types a fresh run name after picking
+ * one. Everything else pre-fills identically to a Duplicate. */
+export function templateToFormValues(template: Template): SimulationFormValues {
+  const runwayModes: Record<string, OperatingMode> = {};
+  const runwayInitialStatus: Record<string, OperationalStatus> = {};
+  for (const runway of template.runways) {
+    runwayModes[String(runway.runwayId)] = runway.operatingMode;
+    runwayInitialStatus[String(runway.runwayId)] = runway.operationalStatus ?? 'Available';
+  }
+  return {
+    name: '',
+    arrivalRate: template.arrivalRatePerHour,
+    departureRate: template.departureRatePerHour,
+    durationMinutes: template.durationMinutes,
+    maxWaitMinutes: template.maxWaitMinutes,
+    includeClosures: template.includeClosures,
+    randomSeed: template.randomSeed,
+    heavyPercentage: template.heavyPercentage,
+    mediumPercentage: template.mediumPercentage,
+    lightPercentage: template.lightPercentage,
+    weatherCondition: template.weatherCondition,
+    runwayIds: template.runways.map((runway) => runway.runwayId),
+    runwayModes,
+    runwayInitialStatus,
+  };
+}
+
+/** Builds a "save as template" request from the create form's current
+ * values plus a separately-collected template name (the form's own `name`
+ * field isn't part of what gets templated — see `templateToFormValues`). */
+export function toCreateTemplateRequest(
+  templateName: string,
+  values: SimulationFormValues,
+): CreateTemplateRequest {
+  return {
+    name: templateName.trim(),
+    arrivalRatePerHour: values.arrivalRate,
+    departureRatePerHour: values.departureRate,
+    durationMinutes: values.durationMinutes,
+    maxWaitMinutes: values.maxWaitMinutes,
+    includeClosures: values.includeClosures,
+    weatherCondition: values.weatherCondition,
+    ...(values.randomSeed != null ? { randomSeed: values.randomSeed } : {}),
     ...(values.heavyPercentage != null
       ? {
           heavyPercentage: values.heavyPercentage,

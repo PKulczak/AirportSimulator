@@ -13,6 +13,43 @@ export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
 });
 
+/** localStorage key for the DRF auth token (Slice 9.1) — exported so
+ * AuthContext (the only other place that reads/writes it) can't drift out of
+ * sync with what the request interceptor below actually looks for. */
+export const AUTH_TOKEN_STORAGE_KEY = 'airport.authToken';
+
+// Attaches the stored token (if any) to every outgoing request. Reads
+// straight from localStorage on each request rather than caching it in a
+// variable, so a login/logout elsewhere takes effect on the very next
+// request with no extra wiring needed.
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  if (token) {
+    config.headers.Authorization = `Token ${token}`;
+  }
+  return config;
+});
+
+// Lets AuthContext react to a 401 from anywhere in the app (an expired/
+// revoked token, or REQUIRE_AUTH having been turned on server-side after the
+// page was already loaded) without every single call site needing to check
+// for it — registered once, from AuthProvider.
+let unauthorizedHandler: (() => void) | null = null;
+
+export function registerUnauthorizedHandler(handler: () => void): void {
+  unauthorizedHandler = handler;
+}
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      unauthorizedHandler?.();
+    }
+    return Promise.reject(error);
+  },
+);
+
 function toApiError(err: unknown): ApiError {
   if (axios.isAxiosError(err)) {
     return {

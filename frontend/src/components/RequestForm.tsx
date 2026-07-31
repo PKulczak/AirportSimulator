@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { InputText } from 'primereact/inputtext';
@@ -7,6 +7,7 @@ import { SelectButton } from 'primereact/selectbutton';
 import { Dropdown } from 'primereact/dropdown';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
+import { Dialog } from 'primereact/dialog';
 import { usePost } from '../functions/axios';
 import RunwaySelectionField from './RunwaySelectionField';
 import WeightClassMixSlider, { type WeightClassMix } from './WeightClassMixSlider';
@@ -14,11 +15,15 @@ import {
   DEFAULT_WEIGHT_CLASS_MIX,
   defaultSimulationFormValues,
   simulationFormSchema,
+  SIMULATION_NAME_MAX,
   toCreateSimulationRequest,
+  toCreateTemplateRequest,
+  validateSimulationName,
   WEATHER_CONDITION_OPTIONS,
   type SimulationFormValues,
 } from '../schemas/simulationForm';
 import type { CreateSimulationRequest, Simulation } from '../types/simulation';
+import type { CreateTemplateRequest, Template } from '../types/template';
 
 const CLOSURES_OPTIONS: { label: string; value: boolean }[] = [
   { label: 'No', value: false },
@@ -40,16 +45,27 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
   >('/api/simulations/');
 
   const {
+    execute: createTemplate,
+    loading: savingTemplate,
+    error: saveTemplateError,
+  } = usePost<Template, CreateTemplateRequest>('/api/templates/');
+
+  const {
     control,
     handleSubmit,
     watch,
     setValue,
     reset,
+    trigger,
+    getValues,
     formState: { errors },
   } = useForm<SimulationFormValues>({
     resolver: zodResolver(simulationFormSchema),
     defaultValues: initialValues ?? defaultSimulationFormValues,
   });
+
+  const [saveTemplateVisible, setSaveTemplateVisible] = useState(false);
+  const [templateNameInput, setTemplateNameInput] = useState('');
 
   // Re-seed the form when the caller swaps in new initial values (e.g. opening
   // Duplicate for a different run without remounting the form).
@@ -100,6 +116,33 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
       onCreated(created);
     }
   });
+
+  // Validates the whole form before opening the naming prompt — a template
+  // is meant to be a reusable, well-formed config, so it goes through the
+  // same rules a real submission would. Any failures already show up as this
+  // form's own inline field errors, so there's nothing extra to display here.
+  const openSaveTemplate = async () => {
+    const valid = await trigger();
+    if (!valid) {
+      return;
+    }
+    setTemplateNameInput('');
+    setSaveTemplateVisible(true);
+  };
+
+  const templateNameError = validateSimulationName(templateNameInput);
+
+  const confirmSaveTemplate = async () => {
+    if (templateNameInput.trim() === '' || templateNameError) {
+      return;
+    }
+    const created = await createTemplate(
+      toCreateTemplateRequest(templateNameInput, getValues()),
+    );
+    if (created) {
+      setSaveTemplateVisible(false);
+    }
+  };
 
   const runwayModesError: string | undefined =
     (errors.runwayModes?.message as string | undefined) ?? errors.runwayIds?.message;
@@ -334,6 +377,16 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         error={runwayModesError}
       />
 
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          label="Save as Template"
+          icon="pi pi-save"
+          text
+          onClick={openSaveTemplate}
+        />
+      </div>
+
       {submitError && (
         <Message
           severity="error"
@@ -353,6 +406,72 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
         loading={submitting}
         className="-mx-6 -mb-8 mt-2 !rounded-t-none !rounded-b-md !border-0 !py-3 !text-lg !font-bold"
       />
+
+      <Dialog
+        header="Save as Template"
+        visible={saveTemplateVisible}
+        onHide={() => {
+          if (!savingTemplate) {
+            setSaveTemplateVisible(false);
+          }
+        }}
+        draggable={false}
+        dismissableMask={!savingTemplate}
+        style={{ width: '28rem', maxWidth: '90vw' }}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              label="Cancel"
+              text
+              disabled={savingTemplate}
+              onClick={() => setSaveTemplateVisible(false)}
+            />
+            <Button
+              label="Save"
+              loading={savingTemplate}
+              disabled={templateNameInput.trim() === '' || !!templateNameError}
+              onClick={confirmSaveTemplate}
+              className="!border-brand-accent-active !bg-brand-accent-active !text-white"
+            />
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-1">
+          <label htmlFor="template-name" className="text-sm font-bold text-slate-800">
+            Template Name
+          </label>
+          <InputText
+            id="template-name"
+            value={templateNameInput}
+            maxLength={SIMULATION_NAME_MAX}
+            autoFocus
+            onChange={(e) => setTemplateNameInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                confirmSaveTemplate();
+              }
+            }}
+            className={`bg-brand-bg ${templateNameError && templateNameInput ? 'p-invalid' : ''}`}
+          />
+          <small className="text-slate-500">
+            Saves the current form (everything except the name above) so it can be picked from
+            &quot;From Template&quot; next time.
+          </small>
+          {templateNameInput.length > 0 && templateNameError && (
+            <small className="text-red-600">{templateNameError}</small>
+          )}
+          {saveTemplateError && (
+            <Message
+              severity="error"
+              text={
+                (saveTemplateError.body?.detail as string | undefined) ??
+                'Failed to save template. Please try again.'
+              }
+              className="mt-2 w-full"
+            />
+          )}
+        </div>
+      </Dialog>
     </form>
   );
 }

@@ -26,6 +26,268 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-31 — Polish: logout button cursor + login field widths
+
+**Slice:** n/a (user-requested follow-up polish on Slice 9.1's auth UI)
+**Status:** Done
+
+**Changes**
+- [frontend/src/components/MainLayout.tsx](frontend/src/components/MainLayout.tsx) — the "Log
+  out" button gained `cursor-pointer` so hovering it shows a clickable cursor.
+- [frontend/src/components/LoginPage.tsx](frontend/src/components/LoginPage.tsx) — the
+  username `InputText` gained `w-full` (it was missing the width class the `Password` field
+  already had via its wrapper), so both fields are now the same width.
+
+**Verification**
+- `npx tsc -b --noEmit` and `npm run lint` clean. Checked for stray processes before
+  restarting (found and killed more of the same recurring extra `manage.py runserver`/
+  `rundramatiq`/`vite` pairs — see the last two entries' notes), confirmed clean, restarted all
+  three.
+- Confirmed live via the running dev server's own request log that a real browser session is
+  already authenticated end to end under `REQUIRE_AUTH=True` (`GET /api/auth/me/` and
+  `/api/simulations/` both 200 with a token attached) — the first live, in-browser confirmation
+  of Slice 9.1's login flow actually working, beyond the curl-only verification in that entry.
+
+## 2026-07-31 — Slice 9.1 — Authentication
+
+**Slice:** 9.1 — Authentication
+**Status:** Done
+
+**Backend**
+- [backend/backend/settings.py](backend/backend/settings.py) — added `rest_framework.authtoken`
+  to `INSTALLED_APPS`; `REST_FRAMEWORK.DEFAULT_AUTHENTICATION_CLASSES` =
+  `TokenAuthentication` + `SessionAuthentication` (the latter only ever actually engaged via
+  the Django admin/browsable API — the frontend's axios instance never sends session cookies);
+  `REST_FRAMEWORK.DEFAULT_PERMISSION_CLASSES` = the new conditional permission below; and a new
+  `REQUIRE_AUTH = env.bool("REQUIRE_AUTH", default=False)` setting.
+- [backend/api/permissions.py](backend/api/permissions.py) (new) —
+  `IsAuthenticatedUnlessAuthDisabled`: behaves as `AllowAny` while `settings.REQUIRE_AUTH` is
+  off (the default — every endpoint stays exactly as open as before this slice), and as
+  `IsAuthenticated` once it's on. Set as the *global* default permission class, so every
+  existing viewset (`SimulationViewset`, `RunwayViewset`, `TemplateViewset`) is gated uniformly
+  with zero per-viewset changes.
+- [backend/api/serializers/login_dto.py](backend/api/serializers/login_dto.py) (new) —
+  `LoginDto`: validates username/password via Django's `authenticate()`, one generic "Invalid
+  username or password" error for both wrong-password and unknown-username (no username
+  enumeration).
+- [backend/api/serializers/user_dto.py](backend/api/serializers/user_dto.py) (new) —
+  `UserDto`: read-only `id`/`username`/`email` — Django's built-in `User` model is used as-is,
+  no custom user model, no self-serve signup (users are provisioned via `manage.py
+  createsuperuser`/the admin).
+- [backend/api/views/auth_views.py](backend/api/views/auth_views.py) (new) — three plain
+  `APIView`s, each with **explicit** `permission_classes` (not the conditional default, since
+  none of these make sense to gate on `REQUIRE_AUTH`):
+  - `LoginView` (`AllowAny` — a login endpoint gated by login would be a chicken-and-egg
+    problem) issues/reuses a `Token` via `get_or_create`.
+  - `LogoutView` (`IsAuthenticated`) deletes the caller's token.
+  - `CurrentUserView` (`IsAuthenticated`) — "who am I logged in as", for the frontend to
+    confirm a stored token is still valid after a page refresh rather than trusting it blindly.
+- [backend/api/urls.py](backend/api/urls.py) — added `auth/login/`, `auth/logout/`, `auth/me/`
+  (plain `path()`s alongside the existing `DefaultRouter`).
+- [backend/.env.example](backend/.env.example), [backend/.env](backend/.env) — documented/set
+  `REQUIRE_AUTH=False`.
+- `rest_framework.authtoken`'s bundled migrations applied via `manage.py migrate`.
+
+**Frontend**
+- [frontend/src/types/auth.ts](frontend/src/types/auth.ts) (new) — `AuthUser`, `LoginResponse`.
+- [frontend/src/functions/axios.ts](frontend/src/functions/axios.ts) — a request interceptor
+  attaches `Authorization: Token <token>` (read fresh from `localStorage` on every request, key
+  exported as `AUTH_TOKEN_STORAGE_KEY` so `AuthContext` can't drift out of sync with it); a
+  response interceptor calls a `registerUnauthorizedHandler`-registered callback on any 401
+  from *any* request, then rethrows so existing `.catch()`/error-state handling is unaffected.
+- [frontend/src/context/AuthContext.tsx](frontend/src/context/AuthContext.tsx) (new) —
+  `AuthProvider`/`useAuth()`, following the same Context pattern as `RunwayContext.tsx`. Reuses
+  the existing `useGet`/`usePost` hooks exactly as every form in this app already does (no
+  bespoke fetch logic): `useGet<AuthUser>(token ? '/api/auth/me/' : null)` re-validates a stored
+  token on mount instead of trusting it blindly; `usePost` drives login. Registers the 401
+  handler to clear stored auth and redirect to `/login` — deliberately the *only* gating
+  mechanism (no proactive route guard): since every endpoint stays open until `REQUIRE_AUTH` is
+  turned on server-side, a client-side gate would just duplicate logic the backend already
+  owns, and would need to be kept in sync with a flag the frontend has no direct way to read.
+- [frontend/src/components/LoginPage.tsx](frontend/src/components/LoginPage.tsx) (new) — a
+  plain controlled two-field form (not react-hook-form — same reasoning as the rename dialog in
+  `SimulationHistory.tsx`: two fields, no cross-field rules), styled like `PageNotFound.tsx`.
+- [frontend/src/main.tsx](frontend/src/main.tsx) — added `AuthProvider`, nested *inside*
+  `BrowserRouter` (unlike `RunwayProvider`) since it navigates to `/login` on a 401.
+- [frontend/src/App.tsx](frontend/src/App.tsx) — added the `/login` route.
+- [frontend/src/components/MainLayout.tsx](frontend/src/components/MainLayout.tsx) — added a
+  slim "Logged in as X · Log out" bar, rendered *only* when `user` is set — with `REQUIRE_AUTH`
+  off by default, `user` is never set through normal use, so every existing page stays
+  pixel-identical.
+
+**Verification**
+- `pytest` — 263 passed (246 previously + 17 new in `backend/tests/feature/auth_test.py`):
+  login (success/token-reuse/wrong-password/unknown-user/inactive-user/reachable-even-when-
+  REQUIRE_AUTH-is-on), `/me` and `/logout` (401 with no credentials regardless of
+  `REQUIRE_AUTH`, 200/204 with a valid token, token dead after logout), and the core
+  requirement — `GET /api/simulations/`, `/api/templates/`, `/api/runways/` all 200 with no
+  credentials by default, 401 with no/garbage credentials once `@override_settings
+  (REQUIRE_AUTH=True)`, 200 with a valid token under the same override.
+- `npx tsc -b --noEmit`, `npm run lint`, `npm run build` all clean; `npm run test` — 56 passed
+  (unchanged; no new frontend unit tests were added — `AuthContext`/`LoginPage` need
+  router/axios mocking with no established component-test precedent in this codebase yet, so
+  verification here relied on the live check below instead).
+- Checked for stray `runserver`/`rundramatiq`/`vite` processes before restarting (found and
+  killed another unexplained extra `manage.py runserver` pair — same recurring StatReloader
+  pattern noted in the last two entries), confirmed process list and Redis connection list were
+  empty, started fresh.
+- Live-verified against the real dev DB with `REQUIRE_AUTH` left at its default `False`:
+  confirmed `GET /api/simulations/`, `/api/runways/`, `/api/templates/` all still 200 with no
+  credentials (the default-open behavior is intact); created a real user via `manage.py shell`
+  and exercised the full lifecycle over HTTP — `POST /api/auth/login/` (200 + token; 400 on
+  wrong password), `GET /api/auth/me/` (401 with no token, 200 with it), `POST
+  /api/auth/logout/` (204), then confirmed the same token now gets `401 Invalid token` on
+  `/api/auth/me/`.
+- **Did not** flip `REQUIRE_AUTH=True` on the live dev server as part of this verification —
+  doing so would immediately require login for the user's own already-open dev environment, a
+  disruptive change in scope beyond "verify it works." That specific enforcement path (401
+  without creds / 200 with a valid token once the flag is on) is exactly what the `pytest`
+  suite's `RequireAuthGatingTest` covers via `override_settings`, which is the safer place to
+  prove it.
+- **Not verified in a browser** — no browser-automation tool available in this environment; the
+  login page/redirect-on-401/logout-button flow hasn't been clicked through live.
+
+**Notes**
+- No sign-up flow, no per-user data ownership yet (`Simulation`/`Template` rows aren't
+  associated with a user) — this slice is auth *mechanics* only, exactly matching nextSteps.md;
+  Slice 9.2 (per-user ownership) is the natural next step and was **not** started here.
+- `REQUIRE_AUTH` staying `False` by default is deliberate, not an oversight: this repo's dev DB
+  already has real data and no existing users, so defaulting to enforced auth would lock out
+  the current workflow. A deployment turns it on once real users exist and the login flow has
+  been confirmed working end to end.
+
+## 2026-07-31 — Polish: template picker button/delete-icon styling
+
+**Slice:** n/a (user-requested follow-up polish on Slice 8.1's template picker)
+**Status:** Done
+
+**Changes**
+- [frontend/src/components/TemplatePickerDialog.tsx](frontend/src/components/TemplatePickerDialog.tsx)
+  — the per-row delete icon button's `className` gained `!border-transparent !bg-transparent`
+  (matching the same "text icon button with no background" styling every other row-action
+  delete/cancel button in `SimulationHistory.tsx` already uses) so it no longer shows a
+  background.
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — the button opening the picker is now labeled "Templates" (was "From Template").
+
+**Verification**
+- `npx tsc -b --noEmit` and `npm run lint` clean. Checked for stray `runserver`/
+  `rundramatiq`/`vite` processes before restarting (found and killed 2 unexplained extra
+  `manage.py runserver` processes again, same as the previous entry — see that entry's note),
+  confirmed the process list and Redis connection list were empty, then started fresh.
+- **Not verified in a browser** — no browser-automation tool available in this environment.
+
+## 2026-07-31 — Slice 8.1 — Save & reuse a named config
+
+**Slice:** 8.1 — Save & reuse a named config
+**Status:** Done
+
+**Backend**
+- [backend/api/models/template.py](backend/api/models/template.py) (new) — `Template` model: the same
+  creation-config fields as `Simulation` (`arrival_rate_per_hour`, `departure_rate_per_hour`,
+  `duration_minutes`, `max_wait_minutes`, `aircraft_speed_knots`, `include_closures`,
+  `random_seed`, `weather_condition`, `heavy_percentage`/`medium_percentage`/`light_percentage`),
+  reusing `Simulation.WeatherCondition.choices` rather than redefining the enum. Deliberately
+  has **no** simulation `name` field — `Template.name` identifies the saved preset itself in
+  the picker, not any run created from it (a template is reused across many differently-named
+  runs).
+- [backend/api/models/template_runway.py](backend/api/models/template_runway.py) (new) —
+  `TemplateRunway`, mirroring `SimulationRunway`'s per-runway shape (FK + operating mode +
+  initial operational status), reusing `SimulationRunway`'s own choices. Its `template` FK uses
+  `related_name="runways"` (not `template_runways`) specifically so `TemplateDto`'s `runways`
+  field can read/write it with no `source=` override — the field name and the model attribute
+  name match, so the same declaration serves both directions of the DTO.
+- [backend/api/managers/template_manager.py](backend/api/managers/template_manager.py) (new) —
+  `TemplateManager.create()`, an exact structural mirror of `SimulationManager.create()`:
+  atomically creates the `Template` row plus its `TemplateRunway` rows via `bulk_create`.
+- [backend/api/serializers/template_dto.py](backend/api/serializers/template_dto.py) (new) —
+  `TemplateDto`, a single DTO serving create/list/retrieve (unlike `Simulation`, a `Template`
+  has no async run lifecycle needing a create/list/detail split). Reuses
+  `SimulationRunwayCreationDto` for `runways` (both input validation and output rendering) and
+  `NAME_PATTERN` from `simulation_creation_dto.py`. Cross-field `validate()` deliberately
+  mirrors `SimulationCreationDto.validate()` almost line-for-line (weight-mix all-or-nothing
+  sum-100, max-wait ≤ 90% duration, closures needs ≥2 runways, rate-vs-runway-mode/availability
+  coverage) — a template snapshots a *complete*, fully-specified config at save time (its own
+  fixed rates/runways/modes), so every rule that would apply to actually creating a Simulation
+  from that same config applies equally well right now; there's no "applies only later" subset
+  to skip.
+- [backend/api/views/template_viewset.py](backend/api/views/template_viewset.py) (new) —
+  `TemplateViewset` (List/Create/Retrieve/Destroy — no Update: there's no "edit a template in
+  place" UX, only save-fresh/pick/delete), `SearchFilter` on `name`, default pagination.
+- [backend/api/urls.py](backend/api/urls.py), [backend/api/admin.py](backend/api/admin.py),
+  [backend/api/models/\_\_init\_\_.py](backend/api/models/__init__.py) — registered
+  `templates` route (`basename="template"`), admin registrations, model exports.
+- [backend/api/migrations/0012_template_templaterunway.py](backend/api/migrations/0012_template_templaterunway.py)
+  (generated via `makemigrations`, applied to the dev DB).
+
+**Frontend**
+- [frontend/src/types/template.ts](frontend/src/types/template.ts) (new) — `Template`,
+  `CreateTemplateRequest`.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) — added
+  `templateToFormValues(template)` (maps a `Template` into `SimulationFormValues`, leaving
+  `name` blank rather than copying the template's own name — same runway-mapping logic as
+  `configToFormValues`) and `toCreateTemplateRequest(templateName, values)` (mirrors
+  `toCreateSimulationRequest`, but takes the template's name as a separate argument since the
+  form's own `name` field isn't part of what gets templated).
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — added a
+  "Save as Template" button (above the Submit footer) that runs the form's own
+  `trigger()` (full `simulationFormSchema` validation — any failures surface as this form's
+  existing inline field errors, so a template is held to the same bar as a real submission)
+  before opening a small naming dialog; confirming POSTs
+  `toCreateTemplateRequest(name, getValues())` to `/api/templates/`.
+- [frontend/src/components/TemplatePickerDialog.tsx](frontend/src/components/TemplatePickerDialog.tsx)
+  (new) — "Load From Template" dialog: paginated `DataTable` (mirrors
+  `SimulationHistory.tsx`'s own list-fetch/paginate pattern) listing saved templates with a
+  "Use" button (`onSelect`) and a per-row delete (own nested confirm dialog, mirroring
+  `SimulationHistory.tsx`'s delete-confirm pattern).
+- [frontend/src/components/SimulationFormDialog.tsx](frontend/src/components/SimulationFormDialog.tsx)
+  — added an optional `title` prop overriding the previous "infer from whether `initialValues`
+  is set" header logic, since a template pick now *also* sets `initialValues` for a different
+  reason than Duplicate.
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — added a "From Template" button (next to Sweep/Create) opening `TemplatePickerDialog`;
+  picking a template calls `templateToFormValues` and opens the create dialog with
+  `title="Create From Template"`. A new `formSource` state (`'create' | 'duplicate' |
+  'template'`) tracks which of the three entry points is active, purely to pick the dialog's
+  header text.
+
+**Verification**
+- `pytest` — 246 passed (224 previously + 22 new in
+  `backend/tests/feature/template_test.py`: create/persist/defaults, every mirrored
+  `validate()` rule (name pattern, empty/duplicate/unknown/too-many runways, zero rates,
+  partial/non-100 weight mix, max-wait bound, closures-needs-2-runways, unknown weather),
+  list (newest-first, search), retrieve (+404), delete (+404, cascades `TemplateRunway`).
+- `npx tsc -b --noEmit`, `npm run lint`, `npm run build` all clean; `npm run test` — 56 passed
+  (46 previously + 10 new in `simulationForm.test.ts` for `templateToFormValues`/
+  `toCreateTemplateRequest`).
+- Checked for stray `runserver`/`rundramatiq`/`vite` processes before restarting (found and
+  killed 2 unexplained extra `manage.py runserver` processes beyond the expected
+  reloader+child pair — likely a StatReloader restart, triggered by one of this session's many
+  backend file edits, that didn't fully replace its predecessor; see this file's own
+  documented incident history for why this is checked every time rather than assumed clean),
+  confirmed the process list and Redis (`10.11.90.45:6379`) connection list were both empty,
+  then started fresh instances of all three.
+- Live-verified against the real dev DB: `POST /api/templates/` (created id 1, 2 runways,
+  closures + Snow weather + a weight-class mix) → 201; `GET /api/templates/` → 200 with the
+  saved template in `results`; `GET /api/templates/1/` → 200 with the identical full config;
+  fed that exact config into `POST /api/simulations/` → 201 (id 188), proving the
+  template-to-real-simulation round-trip; `DELETE /api/templates/1/` → 204, confirmed gone
+  from a subsequent list call.
+- **Not verified in a browser** (no browser-automation tool available in this environment) —
+  the "Save as Template" button/dialog and "From Template" picker haven't been clicked through
+  live; this should be manually checked (fill the create form, save as a template, reopen via
+  "From Template", confirm it pre-fills identically) before considering the FE side fully
+  confirmed, per this file's standing limitation note.
+
+**Notes**
+- No Update endpoint: a user who wants to change a template deletes it and saves a fresh one —
+  there was no "edit a template in place" requirement in the FE scope, so skipping Update kept
+  the viewset to exactly what's used.
+- The "Save as Template" flow deliberately validates the *entire* form (not just template-
+  relevant fields) before allowing a save, so every saved template is guaranteed to be
+  immediately reusable — picking one and submitting can't ever surface a stale "actually this
+  never worked" error at that later point.
+
 ## 2026-07-30 — Fix: scrubbing the replay timeline while playing got the clock stuck
 
 **Slice:** n/a (user-reported frontend bug)
