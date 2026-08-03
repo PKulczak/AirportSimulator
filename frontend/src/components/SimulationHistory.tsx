@@ -27,8 +27,11 @@ import {
   apiClient,
   POLL_INTERVAL_MS,
   SAFETY_POLL_INTERVAL_MS,
+  useDelete,
   useGet,
+  usePatch,
   usePollWhile,
+  usePost,
 } from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
 import { STATUS_SEVERITY } from '../functions/statusSeverity';
@@ -113,17 +116,13 @@ export default function SimulationHistory() {
   const [templatePickerVisible, setTemplatePickerVisible] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Simulation | null>(null);
-  const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Simulation | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBatchTarget, setDeleteBatchTarget] = useState<Simulation | null>(null);
-  const [deletingBatch, setDeletingBatch] = useState(false);
   const [deleteBatchError, setDeleteBatchError] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<Simulation | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [renaming, setRenaming] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<number[]>([]);
@@ -178,27 +177,44 @@ export default function SimulationHistory() {
     setPage(Math.floor((event.first ?? 0) / PAGE_SIZE) + 1);
   };
 
+  // Same-shape mutations (loading/error/try-catch around a single apiClient
+  // call) previously hand-rolled per action — useDelete/usePatch/usePost
+  // centralize that shape; each site below keeps its own friendly error
+  // copy and post-success side effect (page-back, refetch, closing a
+  // dialog). `!== undefined` (not truthiness) is the correct success check
+  // here since a 204 delete/cancel response's `data` is `''`, which is
+  // falsy despite being a success.
+  const { execute: deleteSimulation, loading: deleting } = useDelete(
+    deleteTarget ? `/api/simulations/${deleteTarget.id}/` : '',
+  );
+  const { execute: deleteBatch, loading: deletingBatch } = useDelete(
+    deleteBatchTarget?.batchId ? `/api/simulations/batch/?id=${deleteBatchTarget.batchId}` : '',
+  );
+  const { execute: renameSimulation, loading: renaming } = usePatch<Simulation, { name: string }>(
+    renameTarget ? `/api/simulations/${renameTarget.id}/` : '',
+  );
+  const { execute: cancelSimulation, loading: cancelling } = usePost<Simulation, void>(
+    cancelTarget ? `/api/simulations/${cancelTarget.id}/cancel/` : '',
+  );
+
   const confirmDelete = async () => {
     if (!deleteTarget) {
       return;
     }
-    setDeleting(true);
     setDeleteError(null);
-    try {
-      await apiClient.delete(`/api/simulations/${deleteTarget.id}/`);
-      setDeleteTarget(null);
-      // If that was the last row on a page past the first, step back a page
-      // (which refetches via the url memo); otherwise refetch in place.
-      const remaining = (data?.results?.length ?? 1) - 1;
-      if (remaining <= 0 && page > 1) {
-        setPage((p) => p - 1);
-      } else {
-        refetch();
-      }
-    } catch {
+    const result = await deleteSimulation();
+    if (result === undefined) {
       setDeleteError('Failed to delete simulation. Please try again.');
-    } finally {
-      setDeleting(false);
+      return;
+    }
+    setDeleteTarget(null);
+    // If that was the last row on a page past the first, step back a page
+    // (which refetches via the url memo); otherwise refetch in place.
+    const remaining = (data?.results?.length ?? 1) - 1;
+    if (remaining <= 0 && page > 1) {
+      setPage((p) => p - 1);
+    } else {
+      refetch();
     }
   };
 
@@ -206,23 +222,20 @@ export default function SimulationHistory() {
     if (!deleteBatchTarget?.batchId) {
       return;
     }
-    setDeletingBatch(true);
     setDeleteBatchError(null);
-    try {
-      await apiClient.delete(`/api/simulations/batch/?id=${deleteBatchTarget.batchId}`);
-      setDeleteBatchTarget(null);
-      // A batch collapses to a single history row, so the same "step back a
-      // page if that was the last row" logic from confirmDelete applies here.
-      const remaining = (data?.results?.length ?? 1) - 1;
-      if (remaining <= 0 && page > 1) {
-        setPage((p) => p - 1);
-      } else {
-        refetch();
-      }
-    } catch {
+    const result = await deleteBatch();
+    if (result === undefined) {
       setDeleteBatchError('Failed to delete sweep. Please try again.');
-    } finally {
-      setDeletingBatch(false);
+      return;
+    }
+    setDeleteBatchTarget(null);
+    // A batch collapses to a single history row, so the same "step back a
+    // page if that was the last row" logic from confirmDelete applies here.
+    const remaining = (data?.results?.length ?? 1) - 1;
+    if (remaining <= 0 && page > 1) {
+      setPage((p) => p - 1);
+    } else {
+      refetch();
     }
   };
 
@@ -239,19 +252,14 @@ export default function SimulationHistory() {
     if (!renameTarget || renameValidationError || renameUnchanged) {
       return;
     }
-    setRenaming(true);
     setRenameError(null);
-    try {
-      await apiClient.patch(`/api/simulations/${renameTarget.id}/`, {
-        name: renameValue.trim(),
-      });
-      setRenameTarget(null);
-      refetch();
-    } catch {
+    const result = await renameSimulation({ name: renameValue.trim() });
+    if (result === undefined) {
       setRenameError('Failed to rename simulation. Please try again.');
-    } finally {
-      setRenaming(false);
+      return;
     }
+    setRenameTarget(null);
+    refetch();
   };
 
   const openCreate = () => {
@@ -294,17 +302,14 @@ export default function SimulationHistory() {
     if (!cancelTarget) {
       return;
     }
-    setCancelling(true);
     setCancelError(null);
-    try {
-      await apiClient.post(`/api/simulations/${cancelTarget.id}/cancel/`);
-      setCancelTarget(null);
-      refetch();
-    } catch {
+    const result = await cancelSimulation();
+    if (result === undefined) {
       setCancelError('Failed to cancel simulation. It may have already finished.');
-    } finally {
-      setCancelling(false);
+      return;
     }
+    setCancelTarget(null);
+    refetch();
   };
 
   const toggleCompareMode = () => {

@@ -202,6 +202,17 @@ class SimulationCreationTest(BaseFeatureTest):
         response = self.client.post(reverse("simulation-list"), payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+    def test_create_simulation_rejects_duration_over_24_hours(self):
+        payload = self._payload(durationMinutes=1441, maxWaitMinutes=20)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("durationMinutes", response.json())
+
+    def test_create_simulation_accepts_duration_at_exactly_24_hours(self):
+        payload = self._payload(durationMinutes=1440, maxWaitMinutes=20)
+        response = self.client.post(reverse("simulation-list"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
     def test_create_simulation_rejects_zero_arrival_and_departure_rate(self):
         payload = self._payload(arrivalRatePerHour=0, departureRatePerHour=0)
         response = self.client.post(reverse("simulation-list"), payload, format="json")

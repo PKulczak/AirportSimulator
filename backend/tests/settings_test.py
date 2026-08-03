@@ -33,3 +33,14 @@ CHANNEL_LAYERS = {
 # depends on whatever REQUIRE_AUTH happens to be set to on disk locally.
 # Individual tests opt into REQUIRE_AUTH=True via override_settings.
 REQUIRE_AUTH = False
+
+# The default login rate limit (10/min) is meant for real traffic; DRF's
+# throttle cache (django.core.cache.cache, LocMemCache by default) persists
+# across every test in a pytest run, and this suite alone makes well over 10
+# POSTs to /api/auth/login/ across its various login tests — so without a
+# much higher ceiling here, an unrelated later test would start seeing 429s
+# purely from test-suite volume, not from anything it did itself.
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,  # noqa: F405 - inherited from `backend.settings import *`
+    "DEFAULT_THROTTLE_RATES": {"login": "10000/min"},
+}

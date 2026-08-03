@@ -17,6 +17,13 @@ NAME_PATTERN = re.compile(r"^[\w\s.,'()#:/&-]+$")
 class SimulationCreationDto(serializers.ModelSerializer):
     runways = SimulationRunwayCreationDto(many=True)
     aircraft_speed_knots = serializers.IntegerField(required=False, min_value=1)
+    # Capped to mirror the frontend's zod schema (24h max) — otherwise a huge
+    # duration_minutes (the model field itself has no upper bound) makes
+    # AircraftDataGenerator build tens/hundreds of millions of Aircraft rows
+    # synchronously inside the dramatiq worker before a single bulk_create,
+    # which can tie up or OOM-kill that worker process.
+    duration_minutes = serializers.IntegerField(min_value=1, max_value=1440)
+    max_wait_minutes = serializers.IntegerField(min_value=1, max_value=1440)
     # Optional reproducibility seed; blank/null = a fresh random run. Bounded to
     # a non-negative 32-bit int: numpy's `default_rng` rejects negative seeds
     # (raising mid-run and marking the sim Error), and the model's IntegerField

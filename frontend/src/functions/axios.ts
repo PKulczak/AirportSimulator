@@ -200,3 +200,33 @@ export function usePut<TResponse, TBody = unknown>(
   const run = useCallback((body: TBody) => execute(body), [execute]);
   return { data, loading, error, execute: run };
 }
+
+/**
+ * Does not auto-fire; exposes `execute(body)` for imperative submission.
+ * Note for callers checking success via the return value: a 204 response's
+ * `data` is `''` (not `undefined`) — check `result !== undefined` rather than
+ * truthiness, since an empty-but-successful response is falsy.
+ */
+export function usePatch<TResponse, TBody = unknown>(
+  url: string,
+  config?: AxiosRequestConfig,
+): UseMutationResult<TResponse, TBody> {
+  const { data, loading, error, execute } = useAxios<TResponse>('patch', url, config);
+  const run = useCallback((body: TBody) => execute(body), [execute]);
+  return { data, loading, error, execute: run };
+}
+
+/**
+ * Does not auto-fire; exposes `execute()` for imperative submission (no body).
+ * Note for callers checking success via the return value: a 204 response's
+ * `data` is `''` (not `undefined`) — check `result !== undefined` rather than
+ * truthiness, since an empty-but-successful response is falsy.
+ */
+export function useDelete<TResponse = unknown>(
+  url: string,
+  config?: AxiosRequestConfig,
+): UseMutationResult<TResponse, void> {
+  const { data, loading, error, execute } = useAxios<TResponse>('delete', url, config);
+  const run = useCallback(() => execute(), [execute]);
+  return { data, loading, error, execute: run };
+}

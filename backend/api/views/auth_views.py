@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from api.serializers.login_dto import LoginDto
@@ -12,9 +13,17 @@ class LoginView(APIView):
     """POST /api/auth/login/ — always open (`AllowAny`) regardless of
     `REQUIRE_AUTH`: a login endpoint that itself required login would be a
     chicken-and-egg problem. Issues (or reuses) a DRF auth token for the
-    authenticated user."""
+    authenticated user.
+
+    Throttled (see REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["login"]) since
+    this is the one endpoint that calls Django's `authenticate()` with
+    caller-supplied credentials on every request with no other lockout —
+    without a rate limit it's an open password-brute-force oracle once a
+    deployment turns REQUIRE_AUTH on."""
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     def post(self, request):
         serializer = LoginDto(data=request.data)
@@ -33,7 +42,13 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        request.user.auth_token.delete()
+        # filter().delete() rather than request.user.auth_token.delete(): a
+        # session-authenticated user (see DEFAULT_AUTHENTICATION_CLASSES) who
+        # has never logged in via LoginView has no Token row at all, and the
+        # reverse-relation accessor raises an unhandled
+        # Token.DoesNotExist/RelatedObjectDoesNotExist (a raw 500) in that
+        # case. A missing row is simply a no-op logout either way.
+        Token.objects.filter(user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AircraftVisualisation, SimulationEvent } from '../types/visualisation';
 
 interface SimulationEventLogProps {
@@ -47,6 +47,13 @@ function describeEvent(
   }
 }
 
+// Bounds the reverse-chronological log to the most recent N entries — while
+// the sidebar is open during playback, `events` (the replay's growing
+// visible-events prefix) can reach into the thousands on a large/long
+// simulation, and copying+reversing the *entire* list every tick would scale
+// with that, not with what's actually rendered.
+const MAX_VISIBLE_LOG_ENTRIES = 300;
+
 /** Reverse-chronological log of events up to the current replay time. Auto-scrolls
  * to the newest entry unless the user has manually scrolled away. */
 export default function SimulationEventLog({
@@ -57,8 +64,18 @@ export default function SimulationEventLog({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [userScrolledAway, setUserScrolledAway] = useState(false);
 
-  const aircraftById = new Map(aircraft.map((a) => [a.id, a]));
-  const reversed = [...events].reverse();
+  // `aircraft` is a stable reference for the whole replay (only changes on a
+  // fresh fetch) — memoize the O(n) lookup map instead of rebuilding it from
+  // scratch on every tick.
+  const aircraftById = useMemo(
+    () => new Map(aircraft.map((a) => [a.id, a])),
+    [aircraft],
+  );
+  const truncatedCount = Math.max(0, events.length - MAX_VISIBLE_LOG_ENTRIES);
+  // Slicing just the tail before reversing (rather than `[...events].reverse()`)
+  // keeps the per-tick copy bounded to what's actually rendered instead of
+  // scaling with the full, ever-growing event list.
+  const reversed = events.slice(-MAX_VISIBLE_LOG_ENTRIES).reverse();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -66,6 +83,16 @@ export default function SimulationEventLog({
       el.scrollTop = 0;
     }
   }, [events, userScrolledAway]);
+
+  // A replay reset drops `events` back to empty (currentTime resets to 0) —
+  // treat that as "start of a fresh replay" and clear any scrolled-away
+  // state left over from the previous run, rather than leaving the log
+  // stuck scrolled away with nothing new arriving to prompt the user back.
+  useEffect(() => {
+    if (events.length === 0) {
+      setUserScrolledAway(false);
+    }
+  }, [events.length]);
 
   const handleScroll = () => {
     const el = containerRef.current;
@@ -87,6 +114,12 @@ export default function SimulationEventLog({
           </button>
         )}
       </div>
+      {truncatedCount > 0 && (
+        <p className="text-xs text-slate-400">
+          Showing the most recent {MAX_VISIBLE_LOG_ENTRIES} events ({truncatedCount} earlier
+          {truncatedCount === 1 ? ' event' : ' events'} hidden).
+        </p>
+      )}
       <div
         ref={containerRef}
         onScroll={handleScroll}

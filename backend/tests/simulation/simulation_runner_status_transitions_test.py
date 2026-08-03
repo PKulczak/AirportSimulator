@@ -66,6 +66,35 @@ def test_exception_during_execute_sets_error_status_not_pending_or_running(
 
 
 @pytest.mark.django_db
+def test_exception_marking_running_sets_error_status_not_stuck_pending(monkeypatch):
+    # Regression test: a failure between fetching the row and persisting the
+    # Running transition (e.g. a transient DB blip) used to propagate
+    # uncaught, leaving the row Pending forever with nothing to mark it Error
+    # (check_stalled_simulations only ever looked at Running rows).
+    helper = BaseFeatureTest()
+    runway = helper.create_runways(1)[0]
+    simulation = helper.create_simulations(1, random_seed=1)
+    SimulationRunway.objects.create(
+        simulation=simulation,
+        runway=runway,
+        operating_mode=SimulationRunway.OperatingMode.MIXED,
+    )
+
+    def boom(self, simulation):
+        raise ValueError("db blip")
+
+    monkeypatch.setattr(SimulationRunner, "_mark_running", boom)
+
+    SimulationRunner().run(simulation.id)
+
+    simulation.refresh_from_db()
+    assert simulation.status == Simulation.Status.ERROR
+    assert simulation.status != Simulation.Status.PENDING
+    assert simulation.error_message == "db blip"
+    assert simulation.completed_at is not None
+
+
+@pytest.mark.django_db
 def test_unknown_simulation_id_does_not_raise():
     # Should log and return quietly rather than propagate — there is no row
     # to mark Error on, so this is the one legitimate case where "never leave

@@ -55,27 +55,52 @@ export default function MetricBasePage() {
       : null;
   const { data, loading, error, refetch } = useGet<SimulationDetailResponse>(detailUrl);
   const [movementType, setMovementType] = useState<MovementType>('Arrival');
-  const { execute: createRerun, loading: rerunning } = usePost<
-    Simulation,
-    CreateSimulationRequest
-  >('/api/simulations/');
-  const { execute: createShare, loading: sharing } = usePost<ShareLink, void>(
-    id ? `/api/simulations/${id}/share/` : '',
-  );
+  const {
+    execute: createRerun,
+    loading: rerunning,
+    error: rerunError,
+  } = usePost<Simulation, CreateSimulationRequest>('/api/simulations/');
+  const {
+    execute: createShare,
+    loading: sharing,
+    error: shareError,
+  } = usePost<ShareLink, void>(id ? `/api/simulations/${id}/share/` : '');
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const [csvDownloading, setCsvDownloading] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
 
-  // A plain navigation (not a fetch+blob), so the browser handles the
-  // download itself via the response's Content-Disposition: attachment —
-  // no loading state or blob-URL cleanup to manage.
-  const downloadCsv = () => {
+  // Fetched via apiClient (not a plain `window.location.href` navigation) so
+  // the request interceptor attaches the DRF auth token header — a raw
+  // top-level navigation can't carry a custom header, so once REQUIRE_AUTH is
+  // on, a plain navigation to the owner-scoped export endpoint always 403s.
+  const downloadCsv = async () => {
     if (!data) {
       return;
     }
     const path = isShared
       ? `/api/shared/${token}/export.csv/`
       : `/api/simulations/${data.id}/export.csv/`;
-    window.location.href = `${apiClient.defaults.baseURL}${path}`;
+    setCsvError(null);
+    setCsvDownloading(true);
+    try {
+      const response = await apiClient.get<Blob>(path, { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `simulation-${data.id}-aircraft.csv`;
+      // Some browsers only honour a synthetic click on an <a download> that's
+      // actually attached to the document.
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setCsvError('Failed to download the CSV. Please try again.');
+    } finally {
+      setCsvDownloading(false);
+    }
   };
 
   // Clone this run's config *with its fixed seed* and navigate to the new run.
@@ -101,9 +126,17 @@ export default function MetricBasePage() {
     if (!shareLink) {
       return;
     }
-    await navigator.clipboard.writeText(shareLink);
-    setShareCopied(true);
+    setCopyError(false);
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setShareCopied(true);
+    } catch {
+      setCopyError(true);
+    }
   };
+
+  const actionError =
+    rerunError?.message ?? shareError?.message ?? csvError ?? undefined;
 
   // Keep polling only while the run is still in flight (Pending/Running); stop
   // once it reaches any terminal state (Complete/Error/Cancelled). Keyed off
@@ -273,6 +306,7 @@ export default function MetricBasePage() {
               aria-label="Download per-aircraft CSV"
               tooltip="Download per-aircraft CSV"
               tooltipOptions={{ position: 'left' }}
+              loading={csvDownloading}
               onClick={downloadCsv}
               className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
@@ -298,6 +332,8 @@ export default function MetricBasePage() {
               />
             )}
           </div>
+
+          {actionError && <Message severity="error" text={actionError} />}
 
           <div className="grid flex-1 grid-cols-1 items-stretch gap-2 lg:grid-cols-3 lg:grid-rows-1">
             <div className="flex flex-col gap-2 lg:col-span-1">
@@ -347,6 +383,12 @@ export default function MetricBasePage() {
               className="!border-brand-accent-active !bg-brand-accent-active !text-black"
             />
           </div>
+          {copyError && (
+            <Message
+              severity="error"
+              text="Couldn't copy automatically — select the link above and copy it manually."
+            />
+          )}
         </div>
       </Dialog>
     </div>

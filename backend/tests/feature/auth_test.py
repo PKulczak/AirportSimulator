@@ -1,8 +1,12 @@
+from unittest import mock
+
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.authtoken.models import Token
+from rest_framework.throttling import ScopedRateThrottle
 
 from tests.base_test import BaseFeatureTest
 
@@ -55,6 +59,43 @@ class LoginTest(BaseFeatureTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
+class LoginThrottleTest(BaseFeatureTest):
+    """DEFAULT_THROTTLE_RATES["login"] guards against brute-forcing
+    /api/auth/login/ — a deliberately low rate is patched directly onto
+    ScopedRateThrottle (rather than via override_settings(REST_FRAMEWORK=...))
+    since DRF's SimpleRateThrottle.THROTTLE_RATES is a class attribute
+    snapshotted from api_settings at import time, not re-read per request —
+    override_settings alone doesn't change it. The throttle cache is cleared
+    before/after so this can't leak into (or be polluted by) any other test's
+    login calls, which share one process-wide cache."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = User.objects.create_user(username="pilot", password="s3cur3-pass!")
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
+    def test_login_is_throttled_after_the_configured_rate(self):
+        with mock.patch.object(ScopedRateThrottle, "THROTTLE_RATES", {"login": "2/min"}):
+            for _ in range(2):
+                response = self.client.post(
+                    reverse("auth-login"),
+                    {"username": "pilot", "password": "wrong-password"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+            response = self.client.post(
+                reverse("auth-login"),
+                {"username": "pilot", "password": "wrong-password"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+
 class CurrentUserAndLogoutTest(BaseFeatureTest):
     def setUp(self):
         super().setUp()
@@ -83,6 +124,19 @@ class CurrentUserAndLogoutTest(BaseFeatureTest):
         response = self.client.post(reverse("auth-logout"))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Token.objects.filter(key=self.token.key).exists())
+
+    def test_logout_with_session_auth_and_no_token_does_not_500(self):
+        # Regression test: a session-authenticated user (SessionAuthentication
+        # is kept in DEFAULT_AUTHENTICATION_CLASSES for Django-admin/
+        # browsable-API use) who never called /auth/login/ has no Token row
+        # at all — `request.user.auth_token.delete()` used to raise an
+        # unhandled Token.DoesNotExist (a raw 500) in exactly this case.
+        Token.objects.filter(user=self.user).delete()
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("auth-logout"))
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_token_no_longer_authenticates_anything_after_logout(self):
         self._authenticate()

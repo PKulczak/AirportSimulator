@@ -27,6 +27,11 @@ class TemplateDto(serializers.ModelSerializer):
 
     runways = SimulationRunwayCreationDto(many=True)
     aircraft_speed_knots = serializers.IntegerField(required=False, min_value=1)
+    # Capped to mirror SimulationCreationDto/the frontend's zod schema (24h
+    # max) — a template with an unbounded duration would happily save, then
+    # blow up the worker the moment it's applied to create a run.
+    duration_minutes = serializers.IntegerField(min_value=1, max_value=1440)
+    max_wait_minutes = serializers.IntegerField(min_value=1, max_value=1440)
     random_seed = serializers.IntegerField(
         required=False,
         allow_null=True,

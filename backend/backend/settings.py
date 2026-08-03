@@ -189,6 +189,15 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "api.permissions.IsAuthenticatedUnlessAuthDisabled",
     ),
+    # Only LoginView opts into this (via ScopedRateThrottle/throttle_scope) —
+    # deliberately not a blanket DEFAULT_THROTTLE_CLASSES, since most of the
+    # API is meant to stay fully open traffic-wise while REQUIRE_AUTH is off.
+    # Login is the one endpoint that calls Django's authenticate() with
+    # caller-supplied credentials on every request, so it's the one that
+    # needs a brute-force guard regardless of REQUIRE_AUTH.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": env("LOGIN_THROTTLE_RATE", default="10/min"),
+    },
 }
 
 # Slice 9.1 — Authentication. False by default so existing dev/CI workflows

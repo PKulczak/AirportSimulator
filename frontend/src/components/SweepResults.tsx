@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
@@ -6,7 +6,8 @@ import { Message } from 'primereact/message';
 import { Tag } from 'primereact/tag';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
-import { useGet } from '../functions/axios';
+import { POLL_INTERVAL_MS, SAFETY_POLL_INTERVAL_MS, useGet, usePollWhile } from '../functions/axios';
+import { useSimulationSocket } from '../functions/socket';
 import { STATUS_SEVERITY } from '../functions/statusSeverity';
 import type { BatchResults, BatchRun } from '../types/metrics';
 import type { SweepVariable } from '../types/simulation';
@@ -53,9 +54,30 @@ export default function SweepResults() {
   const { batchId } = useParams<{ batchId: string }>();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  const { data, loading, error } = useGet<BatchResults>(
+  const { data, loading, error, refetch } = useGet<BatchResults>(
     batchId ? `/api/simulations/batch/?id=${batchId}` : null,
   );
+
+  // A freshly-created sweep starts every run Pending — without this, the page
+  // was a one-shot fetch on mount with no way to see runs progress short of a
+  // full browser reload (the "no live updates" gap the rest of the app closed
+  // for history/detail/visualisation, but missed here). Prefer websocket push
+  // (global feed, same as SimulationHistory), refetching on (re)connect to
+  // catch anything missed during the connect window; keep polling as a
+  // fallback/safety net exactly like every other page that does this.
+  const hasActiveRuns = useMemo(
+    () =>
+      (data?.simulations ?? []).some(
+        (s) => s.status === 'Pending' || s.status === 'Running',
+      ),
+    [data],
+  );
+  const { connected } = useSimulationSocket(
+    hasActiveRuns ? '/ws/simulations/' : null,
+    refetch,
+    refetch,
+  );
+  usePollWhile(hasActiveRuns, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
 
   const backButton = (
     <Button
@@ -93,7 +115,11 @@ export default function SweepResults() {
       <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
         Sweep Results
       </h1>
-      <span aria-hidden className="w-10" />
+      {hasActiveRuns ? (
+        <Button icon="pi pi-refresh" aria-label="Refresh now" onClick={() => refetch()} />
+      ) : (
+        <span aria-hidden className="w-10" />
+      )}
     </div>
   );
 

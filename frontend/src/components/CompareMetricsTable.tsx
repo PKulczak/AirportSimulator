@@ -44,14 +44,23 @@ export default function CompareMetricsTable({
 
   return (
     <div className={`flex flex-col overflow-hidden rounded-lg border border-slate-200 ${className ?? ''}`}>
-      <h2
-        onClick={switchable ? (e) => menuRef.current?.toggle(e) : undefined}
-        className={`flex items-center justify-between gap-2 bg-brand-accent px-3 py-1.5 text-sm font-bold uppercase tracking-wide text-black ${
-          switchable ? 'cursor-pointer select-none' : ''
-        }`}
-      >
-        {title}
-        {switchable && <FontAwesomeIcon icon={faChevronDown} className="text-xs" />}
+      <h2 className="bg-brand-accent px-3 py-1.5 text-sm font-bold uppercase tracking-wide text-black">
+        {switchable ? (
+          // A real <button> (not a click handler on the heading itself) so
+          // this category switcher — the only way to reach any category
+          // besides the initial one in the compare view — is reachable and
+          // activatable via keyboard/screen reader, not just a mouse click.
+          <button
+            type="button"
+            onClick={(e) => menuRef.current?.toggle(e)}
+            className="flex w-full cursor-pointer select-none items-center justify-between gap-2"
+          >
+            {title}
+            <FontAwesomeIcon icon={faChevronDown} className="text-xs" />
+          </button>
+        ) : (
+          <span className="flex items-center justify-between gap-2">{title}</span>
+        )}
       </h2>
       {switchable && <Menu model={menuItems} popup ref={menuRef} />}
       <div className="flex-1 overflow-auto bg-brand-bg">

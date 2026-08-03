@@ -181,12 +181,30 @@ export default function SimulationVisualisation() {
     [data, masterRunways],
   );
 
+  // `data.aircraft` is a stable reference for the whole replay (only changes
+  // on a fresh fetch — see the `data` useMemo above), but this component
+  // re-renders every tick — memoize the O(n) lookup map instead of rebuilding
+  // it from scratch on every tick. Must sit above the early returns below
+  // (Rules of Hooks), hence the `data?.` guard.
+  const aircraftById = useMemo(
+    () => new Map((data?.aircraft ?? []).map((a) => [a.id, a])),
+    [data],
+  );
+
   if (loading && !raw) {
     return <LoadingScreen />;
   }
 
   if (error) {
-    return <Message severity="error" text={`Failed to load visualisation: ${error.message}`} />;
+    return (
+      <div className="-m-6 flex h-[calc(100%+3rem)] flex-col items-center justify-center gap-3 p-6">
+        <Message severity="error" text={`Failed to load visualisation: ${error.message}`} />
+        <div className="flex gap-2">
+          <Button icon="pi pi-chevron-left" label="Back" onClick={() => navigate(-1)} />
+          <Button icon="pi pi-refresh" label="Retry" onClick={() => refetch()} />
+        </div>
+      </div>
+    );
   }
 
   if (!raw) {
@@ -257,7 +275,6 @@ export default function SimulationVisualisation() {
 
   const visibleEvents = eventsUpTo(events, currentTime);
   const runwayStates = deriveRunwayStates(visibleEvents);
-  const aircraftById = new Map(data.aircraft.map((a) => [a.id, a]));
 
   const isEmergencyEvent = (evt: SimulationEvent): evt is EmergencyEvent =>
     evt.type === 'emergency';

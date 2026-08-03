@@ -84,6 +84,18 @@ class SimulationSweepTest(BaseFeatureTest):
         response = self.client.post(reverse("simulation-sweep"), payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_sweep_rejects_huge_range_without_materializing_it(self):
+        # Regression test: `range_end`/`range_step` have no upper bound, so a
+        # naive `list(range(start, end + 1, step))` built before the
+        # MAX_SWEEP_RUNS check would allocate hundreds of millions of ints
+        # synchronously in the request-handling process. This must reject
+        # fast, not hang or OOM the test process.
+        payload = self._payload(
+            arrivalRatePerHour=0, rangeEnd=2_000_000_000, rangeStep=1
+        )
+        response = self.client.post(reverse("simulation-sweep"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_sweep_rejects_unknown_variable(self):
         payload = self._payload(variable="notARealField")
         response = self.client.post(reverse("simulation-sweep"), payload, format="json")

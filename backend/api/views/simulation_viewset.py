@@ -1,7 +1,7 @@
 import csv
 
 from django.db import transaction
-from django.http import StreamingHttpResponse
+from django.http import Http404, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -36,6 +36,11 @@ class SimulationViewset(
     # PATCH (rename) only — a run's config is immutable once created, so PUT
     # (full replace) is intentionally excluded (405).
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    # A comparison view is meant for a handful of runs side by side; without a
+    # cap, `?ids=` accepts an arbitrarily long list and forces with_detail()'s
+    # full aggregate/prefetch set to run against however many ids are given.
+    MAX_COMPARE_IDS = 20
 
     def get_queryset(self):
         # Slice 9.2: scoped to the requesting user's own runs whenever
@@ -109,7 +114,20 @@ class SimulationViewset(
                 {"detail": "The 'id' query parameter (a batch id) is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        batch = get_object_or_404(SimulationBatch, pk=int(raw_id))
+        batch_id = int(raw_id)
+        # A batch has no owner field of its own — every run in it always
+        # shares one owner (they're all created together in one
+        # SimulationSweepCreationDto.create() call), so "the caller owns at
+        # least one run in this batch" is equivalent to "the caller owns this
+        # batch." Scoping the existence check through get_queryset() (rather
+        # than fetching SimulationBatch directly) is what makes every action
+        # below — including delete — 404 for a batch the caller doesn't own,
+        # instead of letting an unscoped `batch.delete()` null out another
+        # user's runs' batch_id/destroy their batch metadata.
+        owned_runs = self.get_queryset().filter(batch_id=batch_id)
+        if not owned_runs.exists():
+            raise Http404
+        batch = get_object_or_404(SimulationBatch, pk=batch_id)
 
         if request.method == "DELETE":
             # Deleting the SimulationBatch row alone would only null out its
@@ -119,7 +137,7 @@ class SimulationViewset(
             # deleted explicitly first (cascading to their aircraft/events),
             # then the now-empty batch itself.
             with transaction.atomic():
-                self.get_queryset().filter(batch_id=batch.id).delete()
+                owned_runs.delete()
                 batch.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -152,6 +170,14 @@ class SimulationViewset(
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if len(ids) > self.MAX_COMPARE_IDS:
+            return Response(
+                {
+                    "detail": f"At most {self.MAX_COMPARE_IDS} ids may be compared at once "
+                    f"({len(ids)} were given)."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         simulations_by_id = {
             simulation.id: simulation
@@ -172,17 +198,30 @@ class SimulationViewset(
                 status=status.HTTP_409_CONFLICT,
             )
 
-        simulation.cancel_requested = True
-        if simulation.status == Simulation.Status.PENDING:
-            # Not running yet — cancel outright. If a worker still picks it up,
-            # SimulationRunner.run() skips an already-terminal run.
-            simulation.status = Simulation.Status.CANCELLED
-            simulation.completed_at = timezone.now()
-            simulation.save(
-                update_fields=["cancel_requested", "status", "completed_at"]
+        # A conditional UPDATE ... WHERE status='Pending' (not a plain
+        # read-modify-write off the `simulation` object above) so this can't
+        # race with SimulationRunner.run() concurrently flipping the same row
+        # Pending -> Running: exactly one of the two writes actually matches
+        # the WHERE clause, so neither can silently clobber the other's
+        # status/completed_at. Works identically without needing
+        # select_for_update() (and its backend-specific locking semantics).
+        rows_matched = (
+            self.get_queryset()
+            .filter(pk=simulation.pk, status=Simulation.Status.PENDING)
+            .update(
+                cancel_requested=True,
+                status=Simulation.Status.CANCELLED,
+                completed_at=timezone.now(),
             )
+        )
+        if rows_matched:
+            simulation.refresh_from_db()
             publish_simulation_status(simulation.id, simulation.status)
-        else:  # Running — the runner's watchdog reads the flag and stops.
+        else:
+            # Already Running (or became so between the read above and the
+            # update just now) — just set the flag; the runner's watchdog
+            # reads it and stops.
+            simulation.cancel_requested = True
             simulation.save(update_fields=["cancel_requested"])
 
         return Response(SimulationListDto(simulation).data)

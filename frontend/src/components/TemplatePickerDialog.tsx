@@ -6,7 +6,7 @@ import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrash } from '@fortawesome/free-solid-svg-icons';
-import { apiClient, useGet } from '../functions/axios';
+import { useDelete, useGet } from '../functions/axios';
 import { WEATHER_CONDITION_OPTIONS } from '../schemas/simulationForm';
 import type { Page } from '../types/common';
 import type { Template } from '../types/template';
@@ -37,11 +37,15 @@ export default function TemplatePickerDialog({
 }: TemplatePickerDialogProps) {
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const url = useMemo(() => `/api/templates/?page=${page}`, [page]);
   const { data, loading, error, refetch } = useGet<Page<Template>>(visible ? url : null);
+  // `!== undefined` (not truthiness) is the correct success check here since a
+  // 204 delete response's `data` is `''`, which is falsy despite succeeding.
+  const { execute: deleteTemplate, loading: deleting } = useDelete(
+    deleteTarget ? `/api/templates/${deleteTarget.id}/` : '',
+  );
 
   const onPage = (event: DataTablePageEvent) => {
     setPage(Math.floor((event.first ?? 0) / PAGE_SIZE) + 1);
@@ -51,21 +55,18 @@ export default function TemplatePickerDialog({
     if (!deleteTarget) {
       return;
     }
-    setDeleting(true);
     setDeleteError(null);
-    try {
-      await apiClient.delete(`/api/templates/${deleteTarget.id}/`);
-      setDeleteTarget(null);
-      const remaining = (data?.results?.length ?? 1) - 1;
-      if (remaining <= 0 && page > 1) {
-        setPage((p) => p - 1);
-      } else {
-        refetch();
-      }
-    } catch {
+    const result = await deleteTemplate();
+    if (result === undefined) {
       setDeleteError('Failed to delete template. Please try again.');
-    } finally {
-      setDeleting(false);
+      return;
+    }
+    setDeleteTarget(null);
+    const remaining = (data?.results?.length ?? 1) - 1;
+    if (remaining <= 0 && page > 1) {
+      setPage((p) => p - 1);
+    } else {
+      refetch();
     }
   };
 

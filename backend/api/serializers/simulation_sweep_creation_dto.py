@@ -37,8 +37,13 @@ class SimulationSweepCreationDto(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     arrival_rate_per_hour = serializers.IntegerField(min_value=0, max_value=100)
     departure_rate_per_hour = serializers.IntegerField(min_value=0, max_value=100)
-    duration_minutes = serializers.IntegerField(min_value=1)
-    max_wait_minutes = serializers.IntegerField(min_value=1)
+    # Capped to mirror SimulationCreationDto/the frontend's zod schema (24h
+    # max). When `variable` is one of these two, the per-step re-validation
+    # below would eventually catch an out-of-range step anyway, but capping
+    # here rejects an out-of-range *base* value immediately with a clear
+    # top-level error instead of a nested per-run one.
+    duration_minutes = serializers.IntegerField(min_value=1, max_value=1440)
+    max_wait_minutes = serializers.IntegerField(min_value=1, max_value=1440)
     aircraft_speed_knots = serializers.IntegerField(required=False, min_value=1)
     include_closures = serializers.BooleanField(required=False, default=False)
     random_seed = serializers.IntegerField(
@@ -97,16 +102,23 @@ class SimulationSweepCreationDto(serializers.Serializer):
                 }
             )
 
-        values = list(range(start, end + 1, step))
-        if len(values) < 2:
+        # Count arithmetically before ever materializing the range: end/step
+        # are user-supplied with no upper bound, so
+        # `list(range(start, end + 1, step))` on e.g. a multi-billion-wide
+        # range would allocate hundreds of millions of ints synchronously
+        # inside this request (not the async worker) before the
+        # MAX_SWEEP_RUNS check below ever got a chance to reject it.
+        run_count = (end - start) // step + 1
+        if run_count < 2:
             raise serializers.ValidationError(
                 "The range and step must produce at least 2 runs to form a sweep."
             )
-        if len(values) > MAX_SWEEP_RUNS:
+        if run_count > MAX_SWEEP_RUNS:
             raise serializers.ValidationError(
                 f"A sweep can create at most {MAX_SWEEP_RUNS} runs "
-                f"(this range/step would create {len(values)})."
+                f"(this range/step would create {run_count})."
             )
+        values = list(range(start, end + 1, step))
 
         base_attrs = {
             key: value

@@ -81,3 +81,30 @@ class CheckStalledSimulationsTest(BaseFeatureTest):
 
         simulation.refresh_from_db()
         self.assertEqual(simulation.status, Simulation.Status.RUNNING)
+
+    def test_marks_a_simulation_stuck_pending_past_the_timeout_as_error(self):
+        # Regression test: a task lost or errored before SimulationRunner.run
+        # could persist the Running transition used to leave the row Pending
+        # forever with nothing — this command only ever looked at Running
+        # rows — to notice and recover it.
+        simulation = self.create_simulations(1, status=Simulation.Status.PENDING)
+        Simulation.objects.filter(pk=simulation.pk).update(
+            created_at=timezone.now()
+            - timedelta(minutes=constants.STALLED_RUN_TIMEOUT_REAL_MINUTES + 1)
+        )
+
+        call_command("check_stalled_simulations")
+
+        simulation.refresh_from_db()
+        self.assertEqual(simulation.status, Simulation.Status.ERROR)
+        self.assertIsNotNone(simulation.completed_at)
+        self.assertIn("queued", simulation.error_message.lower())
+
+    def test_leaves_a_recently_created_pending_simulation_alone(self):
+        simulation = self.create_simulations(1, status=Simulation.Status.PENDING)
+
+        call_command("check_stalled_simulations")
+
+        simulation.refresh_from_db()
+        self.assertEqual(simulation.status, Simulation.Status.PENDING)
+        self.assertIsNone(simulation.completed_at)

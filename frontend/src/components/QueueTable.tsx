@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties } from 'react';
+import { useMemo, useRef, type CSSProperties } from 'react';
 import { OverlayPanel } from 'primereact/overlaypanel';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGasPump, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
@@ -54,19 +54,34 @@ export default function QueueTable({
   movementType,
   activeEmergencyByAircraft,
 }: QueueTableProps) {
-  const aircraftById = new Map(aircraft.map((a) => [a.id, a]));
+  // `aircraft` is a stable reference for the whole replay (only changes on a
+  // fresh fetch), but this component re-renders every tick — memoize the
+  // O(n) lookup map instead of rebuilding it from scratch on every tick.
+  const aircraftById = useMemo(
+    () => new Map(aircraft.map((a) => [a.id, a])),
+    [aircraft],
+  );
   const isArrival = movementType === 'Arrival';
   const removedListRef = useRef<OverlayPanel>(null);
 
-  const removedAircraft = aircraft
-    .filter(
-      (ac) =>
-        ac.movementType === movementType &&
-        (ac.outcome === 'Diverted' || ac.outcome === 'Cancelled') &&
-        ac.completionTime !== null &&
-        ac.completionTime <= currentTime,
-    )
-    .sort((a, b) => (b.completionTime as number) - (a.completionTime as number));
+  // Sorted once per `aircraft`/`movementType` change (not per tick) — only
+  // the currentTime cutoff below needs to run every tick, so the O(n log n)
+  // sort isn't repeated on every one of up to 8 ticks/sec.
+  const removedAircraftSorted = useMemo(
+    () =>
+      aircraft
+        .filter(
+          (ac) =>
+            ac.movementType === movementType &&
+            (ac.outcome === 'Diverted' || ac.outcome === 'Cancelled') &&
+            ac.completionTime !== null,
+        )
+        .sort((a, b) => (b.completionTime as number) - (a.completionTime as number)),
+    [aircraft, movementType],
+  );
+  const removedAircraft = removedAircraftSorted.filter(
+    (ac) => (ac.completionTime as number) <= currentTime,
+  );
 
   const rows: QueueRow[] = deriveQueue(visibleEvents, currentTime)
     .filter((entry) => aircraftById.get(entry.aircraftId)?.movementType === movementType)
