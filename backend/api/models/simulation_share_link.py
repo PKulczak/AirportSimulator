@@ -1,12 +1,11 @@
-import secrets
-
 from django.db import models
 
-
-def _generate_token():
-    # url-safe, ~43 chars from 32 random bytes — long/random enough that
-    # knowing it is itself the credential for read-only access (Slice 10.1).
-    return secrets.token_urlsafe(32)
+# Not just an import of api.models.share_link_token.generate_share_token: the
+# 0014 migration's `token` field default already froze a reference to this
+# exact name at this exact path, so renaming/moving it would break replaying
+# that migration on a fresh database. The two newer share-link models (no
+# migration history to preserve) use the shared helper directly instead.
+from api.models.share_link_token import generate_share_token as _generate_token
 
 
 class SimulationShareLink(models.Model):

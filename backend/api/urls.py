@@ -4,6 +4,8 @@ from rest_framework.routers import DefaultRouter
 from api.views.auth_views import CurrentUserView, LoginView, LogoutView
 from api.views.runway_viewset import RunwayViewset
 from api.views.shared_simulation_views import (
+    SharedBatchResultsView,
+    SharedCompareView,
     SharedSimulationDetailView,
     SharedSimulationExportCsvView,
     SharedSimulationVisualisationView,
@@ -34,5 +36,15 @@ urlpatterns = router.urls + [
         "shared/<str:token>/export.csv/",
         SharedSimulationExportCsvView.as_view(),
         name="shared-simulation-export-csv",
+    ),
+    path(
+        "shared/batch/<str:token>/results/",
+        SharedBatchResultsView.as_view(),
+        name="shared-batch-results",
+    ),
+    path(
+        "shared/compare/<str:token>/",
+        SharedCompareView.as_view(),
+        name="shared-compare",
     ),
 ]

@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
-import { Dialog } from 'primereact/dialog';
-import { InputText } from 'primereact/inputtext';
 import {
   apiClient,
   POLL_INTERVAL_MS,
@@ -24,6 +22,7 @@ import MetricsGeneralStats from './MetricsGeneralStats';
 import MetricsMovementStats from './MetricsMovementStats';
 import MetricsTimeline from './MetricsTimeline';
 import LoadingScreen from './LoadingScreen';
+import ShareLinkDialog from './ShareLinkDialog';
 import backgroundImage from '../assets/Background.png';
 
 /** e.g. "26/06/2026 12:17" — a fixed format so it doesn't depend on the
@@ -356,41 +355,16 @@ export default function MetricBasePage() {
         </div>
       </div>
 
-      <Dialog
+      <ShareLinkDialog
         header="Share this run"
+        description="Anyone with this link can view this run's metrics and replay — no account required. They can't rename, delete, re-run, or export it."
         visible={shareLink !== null}
         onHide={() => setShareLink(null)}
-        draggable={false}
-        dismissableMask
-        style={{ width: '32rem', maxWidth: '90vw' }}
-      >
-        <div className="flex flex-col gap-2">
-          <p className="text-sm text-slate-600">
-            Anyone with this link can view this run&apos;s metrics and replay — no account
-            required. They can&apos;t rename, delete, re-run, or export it.
-          </p>
-          <div className="flex gap-2">
-            <InputText
-              readOnly
-              value={shareLink ?? ''}
-              onFocus={(e) => e.target.select()}
-              className="flex-1 bg-white"
-            />
-            <Button
-              label={shareCopied ? 'Copied!' : 'Copy'}
-              icon={shareCopied ? 'pi pi-check' : 'pi pi-copy'}
-              onClick={copyShareLink}
-              className="!border-brand-accent-active !bg-brand-accent-active !text-black"
-            />
-          </div>
-          {copyError && (
-            <Message
-              severity="error"
-              text="Couldn't copy automatically — select the link above and copy it manually."
-            />
-          )}
-        </div>
-      </Dialog>
+        shareLink={shareLink}
+        copied={shareCopied}
+        onCopy={copyShareLink}
+        copyError={copyError}
+      />
     </div>
   );
 }

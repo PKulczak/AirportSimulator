@@ -26,6 +26,193 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-08-03 — Slice A.2 — Share a sweep or compare view read-only
+
+**Slice:** A.2 — Share a sweep or compare view read-only
+**Status:** Done
+
+**Backend**
+- [backend/api/models/share_link_token.py](backend/api/models/share_link_token.py) (new) —
+  `generate_share_token()`, the token-generation logic factored out of
+  `SimulationShareLink` so the two new link models below share it. Left
+  `SimulationShareLink`'s own `_generate_token` name/module in place (as an
+  import alias) rather than switching it over: migration
+  `0014_simulationsharelink.py` already froze a reference to that exact
+  name at that exact path as its `token` field's default, and renaming it
+  broke `makemigrations`/every fresh `migrate` (caught immediately by
+  running `manage.py makemigrations` locally — see Notes).
+- [backend/api/models/simulation_batch_share_link.py](backend/api/models/simulation_batch_share_link.py)
+  (new) — `SimulationBatchShareLink`: `OneToOneField` to `SimulationBatch`
+  (`CASCADE`), unique `token`, `created_at` — the batch/sweep counterpart to
+  `SimulationShareLink`, same shape and reasoning.
+- [backend/api/models/compare_share_link.py](backend/api/models/compare_share_link.py)
+  (new) — `CompareShareLink`: no FK (a compare set isn't backed by one
+  durable model) — instead a `JSONField simulation_ids`, always stored
+  sorted+deduped by the view that creates it so two requests for the same
+  set of runs are idempotent regardless of selection order. If a linked run
+  is later deleted, `SharedCompareView` just serves whichever ids remain
+  (same "silently drop what's missing" behaviour as the existing
+  authenticated `compare()` action).
+- [backend/api/migrations/0015_comparesharelink_simulationbatchsharelink.py](backend/api/migrations/0015_comparesharelink_simulationbatchsharelink.py)
+  (generated, applied to the dev Postgres DB).
+- [backend/api/models/\_\_init\_\_.py](backend/api/models/__init__.py),
+  [backend/api/admin.py](backend/api/admin.py) — registered both new models.
+- [backend/api/serializers/simulation_batch_share_link_dto.py](backend/api/serializers/simulation_batch_share_link_dto.py),
+  [backend/api/serializers/compare_share_link_dto.py](backend/api/serializers/compare_share_link_dto.py)
+  (new) — read-only `token`/`createdAt`, identical shape to
+  `SimulationShareLinkDto`.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) — two new
+  actions, both owner-scoped and idempotent (`get_or_create`), mirroring the
+  existing single-run `share()`:
+  - `batch_share` (`POST /api/simulations/batch/share/?id=<batchId>`) —
+    scoped via the same `owned_runs` existence check `batch()`/
+    `batch_cancel()` already use.
+  - `compare_share` (`POST /api/simulations/compare/share/?ids=1,2,3`) —
+    reuses `compare()`'s own id-parsing/dedup/`MAX_COMPARE_IDS` validation,
+    then links only the caller's *owned* subset of the requested ids
+    (`sorted(self.get_queryset().filter(id__in=ids)...)`); 400s if fewer
+    than 2 of the requested ids are actually owned/exist.
+- [backend/api/views/shared_simulation_views.py](backend/api/views/shared_simulation_views.py)
+  — two new `AllowAny` views alongside the existing single-run ones:
+  - `SharedBatchResultsView` — same response shape as the authenticated
+    `batch()` GET action, via `Simulation.objects.with_detail_for_batch(...)`
+    (already `order_by("id")`, so no manual reordering needed).
+  - `SharedCompareView` — same response shape as `compare()` (a bare list);
+    reorders `with_detail_for_ids(...)` results to match the link's stored
+    `simulation_ids` order explicitly, since `with_detail()`'s aggregate
+    annotations drop the model's default ordering (same quirk
+    `with_runway_count()`'s docstring already documents).
+- [backend/api/urls.py](backend/api/urls.py) — added
+  `shared/batch/<str:token>/results/` (`shared-batch-results`) and
+  `shared/compare/<str:token>/` (`shared-compare`).
+
+**Frontend**
+- [frontend/src/components/ShareLinkDialog.tsx](frontend/src/components/ShareLinkDialog.tsx)
+  (new) — extracted the "here's your read-only link" copy-to-clipboard
+  dialog (previously inlined once in `MetricBasePage.tsx`) into a shared
+  component, since this slice needed the exact same UI twice more; only the
+  header/description text differs per caller.
+- [frontend/src/components/MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx)
+  — refactored its existing share dialog to use `ShareLinkDialog`; no
+  behaviour change.
+- [frontend/src/components/SweepResults.tsx](frontend/src/components/SweepResults.tsx) —
+  now renders at both `/batch/:batchId` (owner-scoped) and
+  `/shared/batch/:token` (this slice), via the same `useParams`+`isShared`
+  pattern as `MetricBasePage`. Added a header "Share" button (owner mode
+  only, hidden in shared mode) that POSTs to `.../batch/share/` and opens
+  `ShareLinkDialog`. In shared mode, table rows no longer navigate to
+  `/simulation/{id}/detail` (owner-scoped, unreachable for a signed-out
+  visitor) and the back-to-home button is hidden, matching
+  `MetricBasePage`'s existing shared-mode conventions.
+- [frontend/src/components/CompareRuns.tsx](frontend/src/components/CompareRuns.tsx) —
+  now renders at both `/compare?ids=...` and `/shared/compare/:token`. Added
+  `useSharedCompareDetails(token)` (one request for the whole server-resolved
+  id set) alongside the existing `useCompareDetails(ids)` (N parallel
+  per-id fetches); the component picks whichever is active via `isShared`.
+  Added the same header "Share" button/dialog pattern as `SweepResults`,
+  gated on `ids.length >= 2` since the backend requires at least 2 owned
+  ids to create a link. The initial "select 2+ runs" gate and "Back to
+  history" buttons are skipped/hidden in shared mode.
+- [frontend/src/App.tsx](frontend/src/App.tsx) — added
+  `/shared/batch/:token` and `/shared/compare/:token` routes, pointed at
+  the same `SweepResults`/`CompareRuns` components as their authenticated
+  counterparts.
+
+**Verification**
+- New [backend/tests/feature/simulation_batch_compare_share_test.py](backend/tests/feature/simulation_batch_compare_share_test.py)
+  (20 tests): batch-share creation is owner-scoped/idempotent/404s for
+  another user's batch; shared batch results return 200 with zero
+  credentials, work with `REQUIRE_AUTH` on, 404 on an unknown token, and
+  404 (link gone too, `CASCADE`) once the batch is deleted; compare-share
+  creation only links the caller's owned subset of the requested ids,
+  is idempotent regardless of id order, 400s when fewer than 2 ids are
+  owned/given/under the max; shared compare access mirrors the same
+  no-credentials/`REQUIRE_AUTH`/unknown-token checks and silently drops an
+  id deleted after the link was created. Full backend suite: `pytest` →
+  328 passed (was 308; +20).
+- Frontend: `npx tsc -b --noEmit`, `npm run lint`, `npm run test` (56
+  passed, unchanged — no new frontend unit tests; same established
+  practice as prior share-link work of relying on the live/manual check for
+  router-dependent page components) all clean.
+- **Dev-process restart / live curl verification was not performed for
+  this change** — mid-way through the usual "kill stray processes, restart
+  all three, curl the new endpoint" protocol this file's other entries
+  follow (and after discovering + killing genuinely stale 4-day-old
+  `rundramatiq`/`runserver` processes and two orphaned
+  `multiprocessing.spawn_main` children still holding live Redis
+  connections — the exact failure mode this project's CLAUDE.md
+  documents), the user interrupted the next step (starting a fresh
+  `runserver`) and asked to continue without it. Verification for this
+  entry rests on the pytest suite and `tsc`/lint/vitest above only; the
+  new endpoints have not been exercised against a live server or browser.
+
+**Notes**
+- First attempt at `share_link_token.py` moved `SimulationShareLink`'s
+  `_generate_token` to the new shared module and re-pointed
+  `simulation_share_link.py` at it directly — `manage.py makemigrations`
+  immediately failed (`AttributeError: module ... has no attribute
+  '_generate_token'`) because migration `0014` had already baked in a
+  reference to the old name/path as a field default. Fixed by leaving
+  `SimulationShareLink` importing `generate_share_token as _generate_token`
+  at its original module path instead, so the frozen migration reference
+  keeps resolving; the two new models (no migration history to preserve)
+  import the shared helper directly under its real name.
+- The stray-process cleanup performed while attempting the live-verify step
+  found processes considerably staler than this file's usual "restarted
+  minutes ago" notes: a `runserver`/`rundramatiq` chain last started
+  2026-07-31 15:38 (over 3 days old relative to this entry) plus two
+  unattached `multiprocessing.spawn_main` children from the same original
+  launch, found only via `Get-NetTCPConnection` against the Redis broker
+  host, not any `*dramatiq*`/`*runserver*` process-name filter. These were
+  killed as part of this session but **no fresh instance of any of the
+  three dev processes was started afterward** — the dev environment is
+  currently not running any of `runserver`/`rundramatiq`/`npm run dev`.
+  Whoever picks this up next should start all three fresh (not just
+  resume/rely on anything already running) before doing any further manual
+  verification.
+
+## 2026-08-03 — Slice A.1 — Cancel a whole sweep's in-flight runs
+
+**Slice:** A.1 — Cancel a whole sweep's in-flight runs
+**Status:** Done
+
+**Changes**
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) — new
+  `batch_cancel` action (`POST /api/simulations/batch/cancel/?id=<batchId>`),
+  owner-scoped the same way as `batch()`/`share()`. Mirrors the single-run
+  `cancel()` action's conditional-UPDATE approach (not a read-modify-write
+  loop) applied per status across the whole batch: every `Pending` run in
+  it moves straight to `Cancelled`; every `Running` run just gets
+  `cancel_requested` flagged for its own watchdog to notice; already
+  terminal runs are left untouched. Publishes a websocket status update for
+  each run that was `Pending` going in, using its actual post-update status
+  (usually `Cancelled`, but `Running` if it won a race against the runner
+  picking it up in the same instant) rather than assuming the update
+  succeeded.
+- [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+  — a batch row now shows a "Cancel sweep" action (with its own confirm
+  dialog) instead of "Delete sweep" while it has any `Pending`/`Running`
+  run (`batchHasActiveRuns()`, reading the row's aggregate `batchSummary`);
+  "Delete sweep" returns once every run in the batch is terminal — the same
+  active-vs-terminal split standalone rows already use for cancel-vs-menu.
+
+**Verification**
+- New tests in [backend/tests/feature/simulation_batch_results_test.py](backend/tests/feature/simulation_batch_results_test.py):
+  cancelling a mixed-status batch moves every `Pending`/`Running` run
+  correctly and leaves an already-`Complete` run and an unrelated
+  standalone run untouched; missing-`id`/unknown-batch 400/404; a
+  batch with only terminal runs is a no-op. Full backend suite: `pytest` →
+  308 passed (was 304; +4).
+- Frontend: `npx tsc -b --noEmit`, `npm run lint`, `npm run test` (56
+  passed, unchanged) all clean.
+- **Not verified against a live dev server/browser** — see the note on the
+  next (newer) entry above; the dev processes were found stale/stopped
+  while working on the following slice in the same session, and none have
+  been restarted since.
+
+**Notes**
+- none
+
 ## 2026-07-31 — Fix: a shared link forced an anonymous visitor to log in
 
 **Slice:** n/a (bug fix on Slice 10.1's read-only share link)

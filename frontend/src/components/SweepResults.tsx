@@ -6,14 +6,21 @@ import { Message } from 'primereact/message';
 import { Tag } from 'primereact/tag';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
-import { POLL_INTERVAL_MS, SAFETY_POLL_INTERVAL_MS, useGet, usePollWhile } from '../functions/axios';
+import {
+  POLL_INTERVAL_MS,
+  SAFETY_POLL_INTERVAL_MS,
+  useGet,
+  usePollWhile,
+  usePost,
+} from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
 import { STATUS_SEVERITY } from '../functions/statusSeverity';
 import type { BatchResults, BatchRun } from '../types/metrics';
-import type { SweepVariable } from '../types/simulation';
+import type { ShareLink, SweepVariable } from '../types/simulation';
 import { SWEEP_VARIABLE_OPTIONS } from '../schemas/simulationForm';
 import LineChart, { type LineChartPoint } from './LineChart';
 import LoadingScreen from './LoadingScreen';
+import ShareLinkDialog from './ShareLinkDialog';
 import backgroundImage from '../assets/Background.png';
 
 function sweptValue(run: BatchRun, variable: SweepVariable): number {
@@ -51,12 +58,27 @@ const throughputFor = (run: BatchRun): number | null =>
 
 export default function SweepResults() {
   const navigate = useNavigate();
-  const { batchId } = useParams<{ batchId: string }>();
+  // Two route entries render this component: /batch/:batchId (the
+  // owner-scoped, authenticated view) and /shared/batch/:token (Slice A.2's
+  // read-only share link) — exactly one of `batchId`/`token` is ever set.
+  const { batchId, token } = useParams<{ batchId?: string; token?: string }>();
+  const isShared = !!token;
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
 
-  const { data, loading, error, refetch } = useGet<BatchResults>(
-    batchId ? `/api/simulations/batch/?id=${batchId}` : null,
-  );
+  const resultsUrl = isShared
+    ? `/api/shared/batch/${token}/results/`
+    : batchId
+      ? `/api/simulations/batch/?id=${batchId}`
+      : null;
+  const { data, loading, error, refetch } = useGet<BatchResults>(resultsUrl);
+  const {
+    execute: createShare,
+    loading: sharing,
+    error: shareError,
+  } = usePost<ShareLink, void>(batchId ? `/api/simulations/batch/share/?id=${batchId}` : '');
 
   // A freshly-created sweep starts every run Pending — without this, the page
   // was a one-shot fetch on mount with no way to see runs progress short of a
@@ -79,7 +101,30 @@ export default function SweepResults() {
   );
   usePollWhile(hasActiveRuns, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
 
-  const backButton = (
+  const openShare = async () => {
+    setShareCopied(false);
+    const result = await createShare();
+    if (result) {
+      setShareLink(`${window.location.origin}/shared/batch/${result.token}`);
+    }
+  };
+
+  const copyShareLink = async () => {
+    if (!shareLink) {
+      return;
+    }
+    setCopyError(false);
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setShareCopied(true);
+    } catch {
+      setCopyError(true);
+    }
+  };
+
+  // Shared visitors have no account/history to go back to, same reasoning as
+  // MetricBasePage's own `!isShared` back-button guard.
+  const backButton = !isShared && (
     <Button
       icon="pi pi-chevron-left"
       aria-label="Back to home"
@@ -106,6 +151,17 @@ export default function SweepResults() {
           {content}
         </div>
       </div>
+
+      <ShareLinkDialog
+        header="Share these sweep results"
+        description="Anyone with this link can view this sweep's results — no account required. They can't cancel, delete, or re-run it."
+        visible={shareLink !== null}
+        onHide={() => setShareLink(null)}
+        shareLink={shareLink}
+        copied={shareCopied}
+        onCopy={copyShareLink}
+        copyError={copyError}
+      />
     </div>
   );
 
@@ -115,11 +171,21 @@ export default function SweepResults() {
       <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
         Sweep Results
       </h1>
-      {hasActiveRuns ? (
-        <Button icon="pi pi-refresh" aria-label="Refresh now" onClick={() => refetch()} />
-      ) : (
-        <span aria-hidden className="w-10" />
-      )}
+      <div className="flex items-center justify-self-end gap-2">
+        {hasActiveRuns && (
+          <Button icon="pi pi-refresh" aria-label="Refresh now" onClick={() => refetch()} />
+        )}
+        {!isShared && (
+          <Button
+            icon="pi pi-share-alt"
+            aria-label="Share a read-only link"
+            tooltip="Share a read-only link"
+            tooltipOptions={{ position: 'left' }}
+            loading={sharing}
+            onClick={openShare}
+          />
+        )}
+      </div>
     </div>
   );
 
@@ -177,6 +243,9 @@ export default function SweepResults() {
   return shell(
     <>
       {header}
+      {shareError && (
+        <Message severity="error" text={`Failed to create a share link: ${shareError.message}`} />
+      )}
       <p className="text-center text-sm text-slate-600">
         Swept variable: <span className="font-semibold">{variableLabel}</span>
       </p>
@@ -240,8 +309,11 @@ export default function SweepResults() {
               return (
                 <tr
                   key={run.id}
-                  onClick={() => navigate(`/simulation/${run.id}/detail`)}
-                  className={`cursor-pointer hover:bg-brand-bg ${
+                  // A shared visitor has no account, so drilling into
+                  // `/simulation/{id}/detail` (owner-scoped) isn't reachable
+                  // for them — only the authenticated view links through.
+                  onClick={isShared ? undefined : () => navigate(`/simulation/${run.id}/detail`)}
+                  className={`${isShared ? '' : 'cursor-pointer hover:bg-brand-bg'} ${
                     index !== -1 && index === hoveredIndex ? 'bg-brand-bg' : ''
                   }`}
                 >
@@ -261,7 +333,7 @@ export default function SweepResults() {
                     {throughput != null ? formatCount(throughput) : '—'}
                   </td>
                   <td className="p-2 text-right text-brand-accent-active">
-                    <FontAwesomeIcon icon={faChevronRight} />
+                    {!isShared && <FontAwesomeIcon icon={faChevronRight} />}
                   </td>
                 </tr>
               );

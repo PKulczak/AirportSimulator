@@ -9,9 +9,17 @@ from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
-from api.models import Simulation, SimulationBatch, SimulationShareLink
+from api.models import (
+    CompareShareLink,
+    Simulation,
+    SimulationBatch,
+    SimulationBatchShareLink,
+    SimulationShareLink,
+)
 from api.notifications import publish_simulation_status
 from api.serializers.aircraft_export_csv import Echo, aircraft_csv_rows
+from api.serializers.compare_share_link_dto import CompareShareLinkDto
+from api.serializers.simulation_batch_share_link_dto import SimulationBatchShareLinkDto
 from api.serializers.simulation_config_dto import SimulationConfigDto
 from api.serializers.simulation_creation_dto import SimulationCreationDto
 from api.serializers.simulation_detail_dto import SimulationDetailDto
@@ -197,6 +205,26 @@ class SimulationViewset(
         serializer = SimulationListDto(simulations, many=True)
         return Response({"batch_id": batch_id, "simulations": serializer.data})
 
+    @action(detail=False, methods=["post"], url_path="batch/share", url_name="batch-share")
+    def batch_share(self, request):
+        # Slice A.2 — the batch/sweep counterpart to `share()` below: a
+        # shareable, unguessable token granting read-only access to a whole
+        # sweep's results (see SharedBatchResultsView), same owner-scoping and
+        # get_or_create-for-idempotency pattern as a single run's share link.
+        raw_id = request.query_params.get("id", "")
+        if not raw_id.strip().isdigit():
+            return Response(
+                {"detail": "The 'id' query parameter (a batch id) is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        batch_id = int(raw_id)
+        owned_runs = self.get_queryset().filter(batch_id=batch_id)
+        if not owned_runs.exists():
+            raise Http404
+        batch = get_object_or_404(SimulationBatch, pk=batch_id)
+        share_link, _ = SimulationBatchShareLink.objects.get_or_create(batch=batch)
+        return Response(SimulationBatchShareLinkDto(share_link).data)
+
     @action(detail=False, methods=["get"], url_path="compare", url_name="compare")
     def compare(self, request):
         raw_ids = request.query_params.get("ids", "")
@@ -234,6 +262,47 @@ class SimulationViewset(
         ordered = [simulations_by_id[id_] for id_ in ids if id_ in simulations_by_id]
         serializer = SimulationDetailDto(ordered, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="compare/share", url_name="compare-share")
+    def compare_share(self, request):
+        # Slice A.2 — the compare-view counterpart to `share()`/`batch_share()`
+        # above. Unlike a run or a batch, a compare set isn't one durable
+        # model, so the link is keyed on the caller's *owned* subset of the
+        # requested ids, normalised (deduped + sorted) so repeat requests for
+        # the same set of runs are idempotent regardless of selection order.
+        raw_ids = request.query_params.get("ids", "")
+        parts = [part.strip() for part in raw_ids.split(",") if part.strip()]
+        if not parts:
+            return Response(
+                {"detail": "The 'ids' query parameter is required, e.g. ?ids=1,2,3."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            ids = list(dict.fromkeys(int(part) for part in parts))
+        except ValueError:
+            return Response(
+                {
+                    "detail": "The 'ids' query parameter must be a comma-separated list of integers."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(ids) > self.MAX_COMPARE_IDS:
+            return Response(
+                {
+                    "detail": f"At most {self.MAX_COMPARE_IDS} ids may be compared at once "
+                    f"({len(ids)} were given)."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        owned_ids = sorted(self.get_queryset().filter(id__in=ids).values_list("id", flat=True))
+        if len(owned_ids) < 2:
+            return Response(
+                {"detail": "At least 2 valid runs are required to share a comparison."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        share_link, _ = CompareShareLink.objects.get_or_create(simulation_ids=owned_ids)
+        return Response(CompareShareLinkDto(share_link).data)
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):

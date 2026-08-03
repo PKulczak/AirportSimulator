@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.models import Simulation
+from api.models import CompareShareLink, Simulation, SimulationBatchShareLink
 from api.serializers.aircraft_export_csv import Echo, aircraft_csv_rows
 from api.serializers.simulation_detail_dto import SimulationDetailDto
 from api.serializers.simulation_visualisation_dto import SimulationVisualisationDto
@@ -61,3 +61,55 @@ class SharedSimulationExportCsvView(APIView):
             f'attachment; filename="simulation-{simulation.id}-aircraft.csv"'
         )
         return response
+
+
+class SharedBatchResultsView(APIView):
+    """GET /api/shared/batch/<token>/results/ — Slice A.2's read-only share
+    link for a whole batch/sweep, the group counterpart to
+    SharedSimulationDetailView. Same shape as SimulationViewset.batch's GET
+    response; same AllowAny/no-account reasoning."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        share_link = get_object_or_404(
+            SimulationBatchShareLink.objects.select_related("batch"), token=token
+        )
+        batch = share_link.batch
+        simulations = Simulation.objects.with_detail_for_batch(batch.id)
+        serializer = SimulationDetailDto(simulations, many=True)
+        return Response(
+            {
+                "batch_id": batch.id,
+                "swept_variable": batch.swept_variable,
+                "simulations": serializer.data,
+            }
+        )
+
+
+class SharedCompareView(APIView):
+    """GET /api/shared/compare/<token>/ — Slice A.2's read-only share link for
+    an ad-hoc comparison of several runs, the compare-view counterpart to
+    SharedSimulationDetailView. Same shape as SimulationViewset.compare's
+    response (a bare list); any linked id since deleted is silently skipped,
+    same as the authenticated compare endpoint does for an unknown id."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        share_link = get_object_or_404(CompareShareLink, token=token)
+        # with_detail()'s aggregate annotations drop the model's default
+        # ordering (see with_runway_count()'s docstring for the same Django
+        # quirk) — reorder explicitly to match simulation_ids, mirroring
+        # SimulationViewset.compare()'s own reordering step.
+        simulations_by_id = {
+            simulation.id: simulation
+            for simulation in Simulation.objects.with_detail_for_ids(share_link.simulation_ids)
+        }
+        ordered = [
+            simulations_by_id[id_]
+            for id_ in share_link.simulation_ids
+            if id_ in simulations_by_id
+        ]
+        serializer = SimulationDetailDto(ordered, many=True)
+        return Response(serializer.data)

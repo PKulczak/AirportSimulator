@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
-import { apiClient } from '../functions/axios';
+import { apiClient, useGet, usePost } from '../functions/axios';
 import { isDetailComplete } from '../types/metrics';
 import type { SimulationDetail, SimulationDetailResponse } from '../types/metrics';
+import type { ShareLink } from '../types/simulation';
 import CompareMetricsTable, { type CompareRow } from './CompareMetricsTable';
 import LoadingScreen from './LoadingScreen';
+import ShareLinkDialog from './ShareLinkDialog';
 import backgroundImage from '../assets/Background.png';
 
 const formatMinutes = (value: number | null) => (value != null ? value.toFixed(1) : '—');
@@ -193,11 +195,39 @@ function useCompareDetails(ids: number[]) {
   return { data, loading, error };
 }
 
+/** Shared-link counterpart to useCompareDetails above: one request for the
+ * whole (already-resolved, server-side) set of ids instead of N parallel
+ * per-id fetches — there's no authenticated `ids` query param to drive N
+ * fetches from in shared mode, just the token. */
+function useSharedCompareDetails(token: string | null) {
+  const { data, loading, error } = useGet<SimulationDetailResponse[]>(
+    token ? `/api/shared/compare/${token}/` : null,
+  );
+  return {
+    ids: useMemo(() => data?.map((d) => d.id) ?? [], [data]),
+    data: useMemo(
+      () => (data ? Object.fromEntries(data.map((d) => [d.id, d])) : {}),
+      [data],
+    ),
+    loading,
+    error: error ? 'Failed to load this shared comparison.' : null,
+  };
+}
+
 export default function CompareRuns() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  // Two route entries render this component: /compare?ids=... (the
+  // owner-scoped, authenticated view) and /shared/compare/:token (Slice
+  // A.2's read-only share link) — exactly one of the `ids` query param /
+  // `token` route param is ever meaningful.
+  const { token } = useParams<{ token?: string }>();
+  const isShared = !!token;
   const [activeTitle, setActiveTitle] = useState(CATEGORIES[0].title);
   const activeCategory = CATEGORIES.find((c) => c.title === activeTitle) ?? CATEGORIES[0];
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
 
   const ids = useMemo(() => {
     const raw = searchParams.get('ids') ?? '';
@@ -208,9 +238,45 @@ export default function CompareRuns() {
     return Array.from(new Set(parsed));
   }, [searchParams]);
 
-  const { data, loading, error } = useCompareDetails(ids);
+  const authedResult = useCompareDetails(isShared ? [] : ids);
+  const sharedResult = useSharedCompareDetails(token ?? null);
+  const effectiveIds = isShared ? sharedResult.ids : ids;
+  const data = isShared ? sharedResult.data : authedResult.data;
+  const loading = isShared ? sharedResult.loading : authedResult.loading;
+  const error = isShared ? sharedResult.error : authedResult.error;
 
-  const backButton = (
+  const {
+    execute: createShare,
+    loading: sharing,
+    error: shareError,
+  } = usePost<ShareLink, void>(
+    !isShared && ids.length >= 2 ? `/api/simulations/compare/share/?ids=${ids.join(',')}` : '',
+  );
+
+  const openShare = async () => {
+    setShareCopied(false);
+    const result = await createShare();
+    if (result) {
+      setShareLink(`${window.location.origin}/shared/compare/${result.token}`);
+    }
+  };
+
+  const copyShareLink = async () => {
+    if (!shareLink) {
+      return;
+    }
+    setCopyError(false);
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setShareCopied(true);
+    } catch {
+      setCopyError(true);
+    }
+  };
+
+  // Shared visitors have no account/history to go back to, same reasoning as
+  // MetricBasePage's/SweepResults's own `!isShared` back-button guard.
+  const backButton = !isShared && (
     <Button
       icon="pi pi-chevron-left"
       aria-label="Back to home"
@@ -237,6 +303,17 @@ export default function CompareRuns() {
           {content}
         </div>
       </div>
+
+      <ShareLinkDialog
+        header="Share this comparison"
+        description="Anyone with this link can view this comparison — no account required. They can't change which runs are included."
+        visible={shareLink !== null}
+        onHide={() => setShareLink(null)}
+        shareLink={shareLink}
+        copied={shareCopied}
+        onCopy={copyShareLink}
+        copyError={copyError}
+      />
     </div>
   );
 
@@ -246,11 +323,23 @@ export default function CompareRuns() {
       <h1 className="text-center text-2xl font-bold uppercase tracking-wide text-slate-900">
         Compare Runs
       </h1>
-      <span aria-hidden className="w-10" />
+      {!isShared && ids.length >= 2 ? (
+        <Button
+          icon="pi pi-share-alt"
+          aria-label="Share a read-only link"
+          tooltip="Share a read-only link"
+          tooltipOptions={{ position: 'left' }}
+          loading={sharing}
+          onClick={openShare}
+          className="justify-self-end"
+        />
+      ) : (
+        <span aria-hidden className="w-10" />
+      )}
     </div>
   );
 
-  if (ids.length < 2) {
+  if (!isShared && ids.length < 2) {
     return shell(
       <>
         {header}
@@ -278,7 +367,7 @@ export default function CompareRuns() {
     );
   }
 
-  const details = ids
+  const details = effectiveIds
     .map((id) => data[id])
     .filter((d): d is SimulationDetailResponse => d != null);
   const completeRuns = details.filter(isDetailComplete);
@@ -291,9 +380,13 @@ export default function CompareRuns() {
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <Message
             severity="warn"
-            text="At least 2 of the selected runs must be Complete to compare. Go back and pick different runs."
+            text={
+              isShared
+                ? "This shared comparison doesn't have enough Complete runs to display."
+                : 'At least 2 of the selected runs must be Complete to compare. Go back and pick different runs.'
+            }
           />
-          <Button label="Back to history" onClick={() => navigate('/')} />
+          {!isShared && <Button label="Back to history" onClick={() => navigate('/')} />}
         </div>
       </>,
     );
@@ -302,6 +395,9 @@ export default function CompareRuns() {
   return shell(
     <>
       {header}
+      {shareError && (
+        <Message severity="error" text={`Failed to create a share link: ${shareError.message}`} />
+      )}
       {incompleteCount > 0 && (
         <Message
           severity="warn"

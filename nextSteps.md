@@ -35,16 +35,28 @@ not these two, both real gaps for a sweep that's still running.
   covers mixed-status batches, the no-op case (only terminal runs), the
   missing-`id`/unknown-batch 400/404s.
 
-### Slice A.2 — Share a sweep or compare view read-only
+### Slice A.2 — Share a sweep or compare view read-only (Implemented)
 
-- **BE:** Extend `SimulationShareLink` (or a sibling model) to cover a
-  `SimulationBatch` and an ad-hoc compare set, mirroring the existing
-  single-run share ([shared_simulation_views.py](backend/api/views/shared_simulation_views.py)),
-  which today only covers one `Simulation`'s detail/visualisation/export.
-- **FE:** "Share" action on the sweep-results and compare pages, same UX as
-  the existing per-run share dialog.
-- **Test:** pytest that the token grants read-only access to exactly that
-  batch/compare set and nothing else.
+- **BE:** Two sibling models to `SimulationShareLink`
+  ([simulation_batch_share_link.py](backend/api/models/simulation_batch_share_link.py),
+  [compare_share_link.py](backend/api/models/compare_share_link.py)) plus
+  `POST /api/simulations/batch/share/?id=<batchId>` and
+  `POST /api/simulations/compare/share/?ids=1,2,3`
+  ([simulation_viewset.py](backend/api/views/simulation_viewset.py)), and
+  their read-only counterparts `SharedBatchResultsView`/`SharedCompareView`
+  ([shared_simulation_views.py](backend/api/views/shared_simulation_views.py)).
+  A compare link only ever includes the caller's *owned* subset of the
+  requested ids, normalised (deduped + sorted) so repeat requests for the
+  same set are idempotent.
+- **FE:** "Share" action on
+  [SweepResults.tsx](frontend/src/components/SweepResults.tsx) and
+  [CompareRuns.tsx](frontend/src/components/CompareRuns.tsx), same UX as
+  the existing per-run share dialog (now extracted into a shared
+  [ShareLinkDialog.tsx](frontend/src/components/ShareLinkDialog.tsx)); new
+  `/shared/batch/:token` and `/shared/compare/:token` routes.
+- **Test:** [simulation_batch_compare_share_test.py](backend/tests/feature/simulation_batch_compare_share_test.py)
+  — the token grants read-only access to exactly that batch/compare set and
+  nothing else, regardless of `REQUIRE_AUTH`.
 
 ---
 
@@ -147,11 +159,9 @@ Motivated by finishing what the recent security/reliability pass started.
 
 ## Suggested order
 
-1. **Epic A** — cheapest, most immediately useful (people already run
-   sweeps; cancel/share are the two actions they keep asking for once a sweep
-   is running).
+1. ~~**Epic A**~~ — done (both slices implemented).
 2. **Epic B.1** — a decision, not code; resolve it before templates get more
-   load-bearing (e.g. before Epic A.2's sharing touches templates too).
+   load-bearing.
 3. **Epic C** — do before any real multi-user/production deployment, not
    before.
 4. **Epic D** — ongoing hygiene, not a one-time gate.

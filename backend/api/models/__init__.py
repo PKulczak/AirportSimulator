@@ -8,6 +8,8 @@ from api.models.simulation_runway_event import SimulationRunwayEvent
 from api.models.template import Template
 from api.models.template_runway import TemplateRunway
 from api.models.simulation_share_link import SimulationShareLink
+from api.models.simulation_batch_share_link import SimulationBatchShareLink
+from api.models.compare_share_link import CompareShareLink
 
 __all__ = [
     "Simulation",
@@ -20,4 +22,6 @@ __all__ = [
     "Template",
     "TemplateRunway",
     "SimulationShareLink",
+    "SimulationBatchShareLink",
+    "CompareShareLink",
 ]

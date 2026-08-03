@@ -30,7 +30,9 @@ function App() {
         />
         <Route path="/shared/:token/print" element={<SimulationPrintSummary />} />
         <Route path="/compare" element={<CompareRuns />} />
+        <Route path="/shared/compare/:token" element={<CompareRuns />} />
         <Route path="/batch/:batchId" element={<SweepResults />} />
+        <Route path="/shared/batch/:token" element={<SweepResults />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<PageNotFound />} />
       </Route>

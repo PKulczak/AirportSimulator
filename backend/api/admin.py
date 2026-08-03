@@ -3,8 +3,10 @@ from django.contrib import admin
 from api.models import (
     Aircraft,
     AircraftEvent,
+    CompareShareLink,
     Runway,
     Simulation,
+    SimulationBatchShareLink,
     SimulationRunway,
     SimulationRunwayEvent,
     SimulationShareLink,
@@ -21,3 +23,5 @@ admin.site.register(SimulationRunwayEvent)
 admin.site.register(Template)
 admin.site.register(TemplateRunway)
 admin.site.register(SimulationShareLink)
+admin.site.register(SimulationBatchShareLink)
+admin.site.register(CompareShareLink)
