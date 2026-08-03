@@ -130,7 +130,11 @@ class RequireAuthGatingTest(BaseFeatureTest):
             response = self.client.get(reverse("template-list"))
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_runways_list_is_also_gated_by_require_auth(self):
+    def test_runways_list_stays_open_even_when_require_auth_is_on(self):
+        # Deliberately exempt: master reference data with no owner/sensitive
+        # info, fetched unconditionally at app root (RunwayContext) —
+        # including on a read-only /shared/ page, which must never require
+        # login at all (see RunwayViewset).
         with override_settings(REQUIRE_AUTH=True):
             response = self.client.get(reverse("runway-list"))
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)

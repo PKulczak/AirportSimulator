@@ -7,6 +7,7 @@ from api.models import (
     Simulation,
     SimulationRunway,
     SimulationRunwayEvent,
+    SimulationShareLink,
     Template,
     TemplateRunway,
 )
@@ -19,3 +20,4 @@ admin.site.register(AircraftEvent)
 admin.site.register(SimulationRunwayEvent)
 admin.site.register(Template)
 admin.site.register(TemplateRunway)
+admin.site.register(SimulationShareLink)

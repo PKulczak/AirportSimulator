@@ -7,6 +7,7 @@ from api.models.aircraft_event import AircraftEvent
 from api.models.simulation_runway_event import SimulationRunwayEvent
 from api.models.template import Template
 from api.models.template_runway import TemplateRunway
+from api.models.simulation_share_link import SimulationShareLink
 
 __all__ = [
     "Simulation",
@@ -18,4 +19,5 @@ __all__ = [
     "SimulationRunwayEvent",
     "Template",
     "TemplateRunway",
+    "SimulationShareLink",
 ]

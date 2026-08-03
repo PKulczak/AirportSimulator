@@ -28,15 +28,25 @@ function formatDateTime(iso: string | null): string {
  * Reuses the dashboard's own metric components directly (same data, same
  * formatting) rather than duplicating their logic — only the layout and the
  * page chrome around them differ. `window.print()` is the "export"; there's
- * no server-rendered file, so no loading/blob state to manage. */
+ * no server-rendered file, so no loading/blob state to manage.
+ *
+ * Two route entries render this component: /simulation/:id/print (owner-
+ * scoped) and /shared/:token/print (Slice 10.1's read-only share link) —
+ * exactly one of `id`/`token` is ever set. Printing is itself read-only, so
+ * nothing here needs hiding in shared mode — only the fetch URL and the
+ * back-navigation target differ. */
 export default function SimulationPrintSummary() {
-  const { id } = useParams<{ id: string }>();
+  const { id, token } = useParams<{ id?: string; token?: string }>();
   const navigate = useNavigate();
-  const { data, loading, error } = useGet<SimulationDetailResponse>(
-    id ? `/api/simulations/${id}/detail/` : null,
-  );
+  const detailUrl = id
+    ? `/api/simulations/${id}/detail/`
+    : token
+      ? `/api/shared/${token}/detail/`
+      : null;
+  const { data, loading, error } = useGet<SimulationDetailResponse>(detailUrl);
 
-  const backToDetail = () => navigate(`/simulation/${id}/detail`);
+  const backToDetail = () =>
+    navigate(token ? `/shared/${token}/detail` : `/simulation/${id}/detail`);
 
   if (loading && !data) {
     return <LoadingScreen />;

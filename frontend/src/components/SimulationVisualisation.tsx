@@ -41,11 +41,22 @@ const SPEED_OPTIONS = [0.125, 0.25, 0.5, 1, 2, 4, 8];
 const EMERGENCY_WINDOW_MINUTES = 5;
 
 export default function SimulationVisualisation() {
-  const { id } = useParams<{ id: string }>();
+  // Two route entries render this component: /simulation/:id/visualisation
+  // (the owner-scoped, authenticated view) and /shared/:token/visualisation
+  // (Slice 10.1's read-only share link) — exactly one of `id`/`token` is
+  // ever set. Every action on this page (play/pause/reset/scrub/event log)
+  // is purely client-side replay of already-fetched data, so nothing needs
+  // hiding here in shared mode — only the fetch URL differs.
+  const { id, token } = useParams<{ id?: string; token?: string }>();
   const navigate = useNavigate();
   const { runways: masterRunways } = useRunways();
+  const visualisationUrl = id
+    ? `/api/simulations/${id}/visualisation/`
+    : token
+      ? `/api/shared/${token}/visualisation/`
+      : null;
   const { data: raw, loading, error, refetch } = useGet<VisualisationResponseWire>(
-    id ? `/api/simulations/${id}/visualisation/` : null,
+    visualisationUrl,
   );
 
   const data = useMemo(
@@ -64,8 +75,11 @@ export default function SimulationVisualisation() {
   // catch anything missed during the connect window. Keep polling while it
   // runs — fast when push is down, slow as a safety net when it's up — so a
   // missed/half-open push never leaves the page stale until a manual refresh.
+  // Keyed off `raw.id` (the real simulation id, known once loaded) rather
+  // than the route's `id` param so this also works on the token-based
+  // shared route.
   const { connected } = useSimulationSocket(
-    isRunning && id ? `/ws/simulations/${id}/` : null,
+    isRunning && raw ? `/ws/simulations/${raw.id}/` : null,
     refetch,
     refetch,
   );

@@ -26,6 +26,210 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-07-31 — Fix: a shared link forced an anonymous visitor to log in
+
+**Slice:** n/a (bug fix on Slice 10.1's read-only share link)
+**Status:** Done
+
+**Changes**
+- Root cause: the shared `/detail/`, `/visualisation/`, and `/export.csv/` endpoints were
+  already correctly `AllowAny`, but the frontend's `RunwayContext` fetches `/api/runways/`
+  *unconditionally at app root* ([frontend/src/main.tsx](frontend/src/main.tsx) wraps every
+  route in `RunwayProvider`), and `RunwayViewset` had no `permission_classes` override — so it
+  inherited the API's default `IsAuthenticatedUnlessAuthDisabled`. With `REQUIRE_AUTH` on (as it
+  is on this project's live dev server), that one unrelated fetch 401'd for any visitor with no
+  account, which `AuthContext`'s globally-registered 401 handler treated like any other
+  auth failure: clear the (nonexistent) token and `navigate('/login')` — so a completely
+  anonymous visitor opening a share link got bounced straight to a login screen before ever
+  seeing the shared content, even though the actual shared endpoints never required it.
+- [backend/api/views/runway_viewset.py](backend/api/views/runway_viewset.py) — added an
+  explicit `permission_classes = [AllowAny]`. Runways are master reference data
+  (identifier/heading/length) with no owner and nothing sensitive in them, so there's no reason
+  they should be gated behind `REQUIRE_AUTH` at all — this makes the list public unconditionally
+  (previously it was gated exactly like every other endpoint, per Slice 9.1's original design,
+  which hadn't specifically considered this always-fetched-at-app-root case).
+- [backend/tests/feature/auth_test.py](backend/tests/feature/auth_test.py) — renamed/flipped
+  `test_runways_list_is_also_gated_by_require_auth` (now `..._stays_open_even_when_require_auth_is_on`,
+  asserting 200 instead of 401) to match the new intentional behaviour.
+- [frontend/src/context/AuthContext.tsx](frontend/src/context/AuthContext.tsx) — belt-and-braces
+  second fix: the global 401 handler still clears a bad/stale token, but no longer calls
+  `navigate('/login')` when the current path starts with `/shared/`. Covers the rarer edge case
+  the runways fix alone doesn't: a visitor who happens to have an unrelated *expired/revoked*
+  token already sitting in this browser from some earlier session — without this, they'd still
+  get redirected off a share link that has nothing to do with their old session.
+
+**Verification**
+- Updated backend test passes; full suite: `pytest` → 296 passed (unchanged count — a rename/
+  flip, not a new test).
+- Frontend: `npx tsc -b --noEmit`, `npm run lint`, `npm run test` (56 passed, unchanged), and
+  `npm run build` all clean.
+- Restarted all three dev processes (checked for/killed the same recurring stray runserver
+  chain as prior entries, confirmed clean before starting fresh).
+- Live-verified with a bare `curl` (no `Authorization` header at all) against the fresh dev
+  server: `GET /api/runways/` → 200 (previously 401 under this server's `REQUIRE_AUTH=True`),
+  while `GET /api/simulations/` still correctly 401s with no credentials — confirming the fix
+  is scoped to runways only, not a general auth bypass.
+
+**Notes**
+- The `AuthContext` change is not independently visually verified in a browser (no
+  browser-automation tool available, same standing caveat as the rest of this feature); it's a
+  narrow, low-risk conditional around an existing, already-tested code path.
+
+## 2026-07-31 — Extend the share link to CSV export + print/PDF
+
+**Slice:** n/a (user-requested follow-up widening Slice 10.1's share link)
+**Status:** Done
+
+**Changes**
+- [backend/api/serializers/aircraft_export_csv.py](backend/api/serializers/aircraft_export_csv.py)
+  — hoisted the `Echo` streaming helper out of `SimulationViewset` (was private, `_Echo`) so
+  it's shared between the owner-scoped CSV export and the new shared one below, rather than
+  duplicated.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) — updated
+  to import the now-shared `Echo` instead of defining its own copy; no behaviour change.
+- [backend/api/views/shared_simulation_views.py](backend/api/views/shared_simulation_views.py)
+  — added `SharedSimulationExportCsvView`, the same `AllowAny`/token-lookup pattern as
+  `SharedSimulationDetailView`, streaming via the shared `Echo`/`aircraft_csv_rows`.
+- [backend/api/urls.py](backend/api/urls.py) — added
+  `shared/<str:token>/export.csv/` (`shared-simulation-export-csv`).
+- [backend/api/models/simulation_share_link.py](backend/api/models/simulation_share_link.py) —
+  updated the docstring's scope description (was "detail + visualisation", now includes CSV
+  export) to stay accurate.
+- [frontend/src/components/MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx) —
+  the CSV download and Print buttons are no longer hidden in shared mode; `downloadCsv` now
+  points at `/api/shared/{token}/export.csv/` when `isShared`, and the Print button navigates
+  to `/shared/{token}/print` instead of `/simulation/{id}/print`. Re-run and Share stay
+  owner-only (the former creates a new *owned* simulation, the latter requires being the owner
+  to mint a link) — those two are the only remaining hidden actions in shared mode.
+- [frontend/src/components/SimulationPrintSummary.tsx](frontend/src/components/SimulationPrintSummary.tsx)
+  — given the same dual-route treatment as `MetricBasePage`/`SimulationVisualisation`: renders
+  at both `/simulation/:id/print` and the new `/shared/:token/print`, branching the fetch URL
+  and the "back to detail" target on which param is set. `window.print()` itself needed no
+  changes — printing was already purely client-side/read-only.
+- [frontend/src/App.tsx](frontend/src/App.tsx) — added the `/shared/:token/print` route.
+
+**Verification**
+- Extended [backend/tests/feature/simulation_share_test.py](backend/tests/feature/simulation_share_test.py)
+  with 3 new tests: the shared CSV endpoint returns 200 with no credentials and the expected
+  rows/header/`Content-Disposition`, still works with `REQUIRE_AUTH` on, and 404s for an unknown
+  token. Full backend suite: `pytest` → 296 passed (was 293; +3).
+- Frontend: `npx tsc -b --noEmit`, `npm run lint`, `npm run test` (56 passed, unchanged), and
+  `npm run build` all clean.
+- Restarted all three dev processes (same recurring runserver StatReloader chain as prior
+  entries — killed the full tree and confirmed a clean process list/no Redis connections before
+  starting fresh).
+- Live-verified the new endpoint against a **real share link already active in the user's own
+  browser** (visible in the fresh runserver's own request log — `GET
+  /api/shared/<token>/detail/` 200 — the user was already using the feature from the previous
+  turn): `curl`ed `/api/shared/<that same token>/export.csv/` with zero credentials and got a
+  200 with the correct `Content-Disposition` and real per-aircraft CSV rows for that actual
+  simulation (id 194), not a synthetic test fixture.
+- Print itself still isn't visually verified in a browser (no browser-automation tool
+  available, same caveat as the rest of this feature) — verified via `tsc`/the fact it reuses
+  the exact same fetch/render path as the metrics dashboard, just with a different URL.
+
+**Notes**
+- none
+
+## 2026-07-31 — Slice 10.1 — Read-only share link
+
+**Slice:** 10.1 — Read-only share link
+**Status:** Done
+
+**Changes**
+- [backend/api/models/simulation_share_link.py](backend/api/models/simulation_share_link.py)
+  (new) — `SimulationShareLink`: a `OneToOneField` to `Simulation` (`CASCADE` — a link with no
+  simulation behind it is meaningless, unlike `owner`'s `SET_NULL`), a unique `token`
+  (`secrets.token_urlsafe(32)`, ~43 random chars — long/unguessable enough to *be* the
+  credential), `created_at`. One link per simulation, created lazily.
+- [backend/api/migrations/0014_simulationsharelink.py](backend/api/migrations/0014_simulationsharelink.py)
+  (generated, applied).
+- [backend/api/models/__init__.py](backend/api/models/__init__.py),
+  [backend/api/admin.py](backend/api/admin.py) — registered the new model.
+- [backend/api/serializers/simulation_share_link_dto.py](backend/api/serializers/simulation_share_link_dto.py)
+  (new) — `SimulationShareLinkDto`, read-only `token`/`createdAt`.
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py) — new
+  `share` action (`POST /api/simulations/{id}/share/`): `get_object_or_404(self.get_queryset(),
+  pk=pk)` then `SimulationShareLink.objects.get_or_create(simulation=simulation)` — owner-scoped
+  the same way every other action already is (Slice 9.2), and idempotent (repeated clicks on the
+  frontend's "Share" button return the same link rather than minting a new one each time, same
+  precedent as the auth token's `get_or_create`).
+- [backend/api/views/shared_simulation_views.py](backend/api/views/shared_simulation_views.py)
+  (new) — `SharedSimulationDetailView`/`SharedSimulationVisualisationView`, both explicit
+  `permission_classes = [AllowAny]` `APIView`s (same pattern as `LoginView`) outside
+  `SimulationViewset` entirely, looked up via `Simulation.objects.with_detail()`/
+  `.for_visualisation()` filtered by `share_link__token=token` — one query, 404 on an unknown
+  token. Deliberately bypasses REQUIRE_AUTH and ownership entirely: knowing the token *is* the
+  credential, by design, for a signed-out visitor with no account.
+- [backend/api/urls.py](backend/api/urls.py) — added
+  `shared/<str:token>/detail/`/`shared/<str:token>/visualisation/` (names
+  `shared-simulation-detail`/`shared-simulation-visualisation`), alongside the existing
+  `auth/*` non-router paths.
+- [frontend/src/types/simulation.ts](frontend/src/types/simulation.ts) — added `ShareLink`
+  (`{ token, createdAt }`).
+- [frontend/src/components/MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx) —
+  now renders at *both* `/simulation/:id/detail` (owner-scoped) and `/shared/:token/detail`
+  (this slice), via `useParams<{ id?: string; token?: string }>()` and a derived `isShared`
+  flag: the fetch URL, the websocket subscription (now keyed off the loaded `data.id` rather
+  than the route's `id` param, so it also works with only a token), and the "View full replay"
+  button's target all branch on which param is set. In shared mode, the Back/Re-run/Download
+  CSV/Print/Share buttons are hidden entirely (owner-only actions), leaving just the name/date
+  header and the read-only metrics grid. Added a "Share" button (owner mode only) that POSTs to
+  `/api/simulations/{id}/share/` and opens a `Dialog` with a copyable
+  `${origin}/shared/{token}/detail` link (plain `useState` + `navigator.clipboard.writeText`,
+  not react-hook-form — a single read-only field, same proportionality precedent as the
+  template-naming/rename dialogs elsewhere in this codebase).
+- [frontend/src/components/SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx)
+  — same dual-route treatment for `/shared/:token/visualisation`. No action-hiding needed here:
+  every control on this page (play/pause/reset/scrub/speed/event log) is purely client-side
+  replay of already-fetched data, so only the fetch URL and the websocket path (now keyed off
+  the loaded `raw.id`) needed to branch on `token` vs `id`.
+- [frontend/src/App.tsx](frontend/src/App.tsx) — added the two `/shared/:token/...` routes,
+  pointed at the same `MetricBasePage`/`SimulationVisualisation` components as their
+  `/simulation/:id/...` counterparts.
+
+**Verification**
+- New [backend/tests/feature/simulation_share_test.py](backend/tests/feature/simulation_share_test.py)
+  (14 tests): share creation is owner-scoped (404 for another user) and idempotent (repeat
+  calls return the same token); works anonymously when REQUIRE_AUTH is off but 401s without
+  credentials once it's on (same gating as every other action); the two `/shared/` endpoints
+  return 200 with **zero credentials**, still work with REQUIRE_AUTH on (the whole point), 404
+  on an unknown token, only ever expose their own simulation's data (two tokens, two distinct
+  names back), and — confirming the token isn't a backdoor into the rest of the API — a valid
+  token does *not* let an anonymous caller reach the normal owner-scoped `/detail/` endpoint
+  once REQUIRE_AUTH is on; also covers the share link being cleaned up (`CASCADE`) once its
+  simulation is deleted.
+- Full backend suite: `pytest` → 293 passed (was 279; +14 share tests).
+- Frontend: `npx tsc -b --noEmit`, `npm run lint`, `npm run test` (56 passed, unchanged — no
+  new frontend tests added, matching this project's established practice of not adding tests
+  for router/context-dependent page components without existing mocking infrastructure), and
+  `npm run build` all clean.
+- Live-verified against the real dev stack end-to-end: created a real user + a real 5-minute
+  simulation via the API, waited for dramatiq to actually run it to completion, called
+  `POST /.../share/` twice as its owner (same token both times), confirmed a *different*
+  authenticated user gets 404 trying to share it, then — with **no** `Authorization` header at
+  all — fetched both `/api/shared/<token>/detail/` (200, correct name/metrics) and
+  `/api/shared/<token>/visualisation/` (200), and confirmed an invalid token 404s. Cleaned up
+  the test simulation/users afterward.
+- Checked for stray processes before/after restarting all three dev processes (same recurring
+  runserver StatReloader chain noted in the last several entries — killed the full tree via
+  `taskkill //F //T //PID <root>` and confirmed a clean process list and no live Redis
+  connections before starting fresh instances of all three).
+- **Not visually verified in a browser** — no browser-automation tool is available in this
+  environment (same caveat as other recent frontend-touching entries). The dual-route/
+  `isShared` logic was verified via `tsc`/tests/live API calls, and the shared page reuses the
+  exact same rendering components as the authenticated pages (just fewer buttons and a
+  different fetch URL), but the actual on-screen layout of the shared view hasn't been eyeballed.
+
+**Notes**
+- `SimulationBatch`/`Template` are unaffected — sharing is scoped to a single `Simulation` only,
+  matching the slice's literal scope ("read-only access to one run's detail + visualisation").
+- ~~The share link does *not* grant access to `/export.csv/`, `/config/`, `/cancel/`, or any
+  other action~~ — **superseded by the very next entry above** ("Extend the share link to CSV
+  export + print/PDF"), written the same day once the user asked for CSV/PDF to be reachable
+  from a shared view too. `/config/`/`/cancel/`/every other owner-only action is still exactly
+  as unreachable via a token as described here; only the CSV claim changed.
+
 ## 2026-07-31 — Fix: login page password box width + toggle icon centring
 
 **Slice:** n/a (user-requested follow-up polish on Slice 9.1's login screen)

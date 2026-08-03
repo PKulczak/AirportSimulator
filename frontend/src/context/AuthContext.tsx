@@ -58,7 +58,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     registerUnauthorizedHandler(() => {
       clearAuth();
-      navigate('/login');
+      // Slice 10.1's /shared/... links are meant to work with no account at
+      // all — a visitor there could still 401 (e.g. an unrelated stale/
+      // revoked token left over from a previous session on this browser),
+      // but bouncing them to /login would defeat the entire point of a
+      // read-only share link. Just drop the bad token quietly instead of
+      // redirecting away from a page that never needed auth in the first
+      // place.
+      if (!window.location.pathname.startsWith('/shared/')) {
+        navigate('/login');
+      }
     });
   }, [clearAuth, navigate]);
 

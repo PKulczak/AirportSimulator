@@ -9,27 +9,18 @@ from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
-from api.models import Simulation, SimulationBatch
+from api.models import Simulation, SimulationBatch, SimulationShareLink
 from api.notifications import publish_simulation_status
-from api.serializers.aircraft_export_csv import aircraft_csv_rows
+from api.serializers.aircraft_export_csv import Echo, aircraft_csv_rows
 from api.serializers.simulation_config_dto import SimulationConfigDto
 from api.serializers.simulation_creation_dto import SimulationCreationDto
 from api.serializers.simulation_detail_dto import SimulationDetailDto
 from api.serializers.simulation_list_dto import SimulationListDto
 from api.serializers.simulation_rename_dto import SimulationRenameDto
+from api.serializers.simulation_share_link_dto import SimulationShareLinkDto
 from api.serializers.simulation_sweep_creation_dto import SimulationSweepCreationDto
 from api.serializers.simulation_visualisation_dto import SimulationVisualisationDto
 from api.tasks import run_simulation
-
-
-class _Echo:
-    """A pseudo file-like object whose `write` just returns what it's given,
-    so `csv.writer` can be driven row-by-row without buffering the whole
-    file in memory — the standard Django pattern for streaming a CSV
-    (docs.djangoproject.com/en/stable/howto/outputting-csv/)."""
-
-    def write(self, value):
-        return value
 
 
 class SimulationViewset(
@@ -210,10 +201,21 @@ class SimulationViewset(
         serializer = SimulationVisualisationDto(simulation)
         return Response(serializer.data)
 
+    @action(detail=True, methods=["post"])
+    def share(self, request, pk=None):
+        # Owner-scoped via self.get_queryset() (same as every other action) —
+        # only the run's owner (or staff) can mint/view its share link.
+        # get_or_create rather than always creating fresh: repeated clicks on
+        # the frontend's "Share" button return the same link instead of
+        # invalidating a previously-copied one.
+        simulation = get_object_or_404(self.get_queryset(), pk=pk)
+        share_link, _ = SimulationShareLink.objects.get_or_create(simulation=simulation)
+        return Response(SimulationShareLinkDto(share_link).data)
+
     @action(detail=True, methods=["get"], url_path="export.csv", url_name="export-csv")
     def export_csv(self, request, pk=None):
         simulation = get_object_or_404(self.get_queryset(), pk=pk)
-        writer = csv.writer(_Echo())
+        writer = csv.writer(Echo())
         rows = (writer.writerow(row) for row in aircraft_csv_rows(simulation))
         response = StreamingHttpResponse(rows, content_type="text/csv")
         response["Content-Disposition"] = (

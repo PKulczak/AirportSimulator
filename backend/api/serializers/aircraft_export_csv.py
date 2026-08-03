@@ -6,6 +6,17 @@ serializer (no JSON/camelCase involved), but lives alongside the other
 CSV_HEADER = ["Callsign", "Movement", "Outcome", "Wait (mins)", "Fuel (mins)", "Runway"]
 
 
+class Echo:
+    """A pseudo file-like object whose `write` just returns what it's given,
+    so `csv.writer` can be driven row-by-row without buffering the whole
+    file in memory — the standard Django pattern for streaming a CSV
+    (docs.djangoproject.com/en/stable/howto/outputting-csv/). Shared by both
+    SimulationViewset.export_csv and SharedSimulationExportCsvView."""
+
+    def write(self, value):
+        return value
+
+
 def aircraft_csv_rows(simulation):
     """Yields the header row, then one row per aircraft (scheduled-time
     order, the model's own default ordering) — a generator so the view can

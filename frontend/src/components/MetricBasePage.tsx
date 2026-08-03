@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
+import { Dialog } from 'primereact/dialog';
+import { InputText } from 'primereact/inputtext';
 import {
   apiClient,
   POLL_INTERVAL_MS,
@@ -13,7 +15,7 @@ import {
 import { useSimulationSocket } from '../functions/socket';
 import { isDetailComplete } from '../types/metrics';
 import type { SimulationDetailResponse } from '../types/metrics';
-import type { CreateSimulationRequest, Simulation } from '../types/simulation';
+import type { CreateSimulationRequest, ShareLink, Simulation } from '../types/simulation';
 import { detailToRerunRequest } from '../schemas/simulationForm';
 import type { MovementType } from '../types/visualisation';
 import MetricsRunwayInfo from './MetricsRunwayInfo';
@@ -36,16 +38,32 @@ function formatDateTime(iso: string | null): string {
 }
 
 export default function MetricBasePage() {
-  const { id } = useParams<{ id: string }>();
+  // Two route entries render this component: /simulation/:id/detail (the
+  // owner-scoped, authenticated view) and /shared/:token/detail (Slice
+  // 10.1's read-only share link) — exactly one of `id`/`token` is ever set,
+  // and `isShared` below drives which fetch URL is used and which
+  // owner-only actions (rerun/share) are hidden. CSV export and the print
+  // summary are read-only themselves, so they stay available in shared mode
+  // too — just pointed at the token-based endpoints/route instead.
+  const { id, token } = useParams<{ id?: string; token?: string }>();
+  const isShared = !!token;
   const navigate = useNavigate();
-  const { data, loading, error, refetch } = useGet<SimulationDetailResponse>(
-    id ? `/api/simulations/${id}/detail/` : null,
-  );
+  const detailUrl = id
+    ? `/api/simulations/${id}/detail/`
+    : token
+      ? `/api/shared/${token}/detail/`
+      : null;
+  const { data, loading, error, refetch } = useGet<SimulationDetailResponse>(detailUrl);
   const [movementType, setMovementType] = useState<MovementType>('Arrival');
   const { execute: createRerun, loading: rerunning } = usePost<
     Simulation,
     CreateSimulationRequest
   >('/api/simulations/');
+  const { execute: createShare, loading: sharing } = usePost<ShareLink, void>(
+    id ? `/api/simulations/${id}/share/` : '',
+  );
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
 
   // A plain navigation (not a fetch+blob), so the browser handles the
   // download itself via the response's Content-Disposition: attachment —
@@ -54,7 +72,10 @@ export default function MetricBasePage() {
     if (!data) {
       return;
     }
-    window.location.href = `${apiClient.defaults.baseURL}/api/simulations/${data.id}/export.csv/`;
+    const path = isShared
+      ? `/api/shared/${token}/export.csv/`
+      : `/api/simulations/${data.id}/export.csv/`;
+    window.location.href = `${apiClient.defaults.baseURL}${path}`;
   };
 
   // Clone this run's config *with its fixed seed* and navigate to the new run.
@@ -68,15 +89,33 @@ export default function MetricBasePage() {
     }
   };
 
+  const openShare = async () => {
+    setShareCopied(false);
+    const result = await createShare();
+    if (result) {
+      setShareLink(`${window.location.origin}/shared/${result.token}/detail`);
+    }
+  };
+
+  const copyShareLink = async () => {
+    if (!shareLink) {
+      return;
+    }
+    await navigator.clipboard.writeText(shareLink);
+    setShareCopied(true);
+  };
+
   // Keep polling only while the run is still in flight (Pending/Running); stop
-  // once it reaches any terminal state (Complete/Error/Cancelled).
+  // once it reaches any terminal state (Complete/Error/Cancelled). Keyed off
+  // `data.id` (the real simulation id, known once loaded) rather than the
+  // route's `id` param so this also works on the token-based shared route.
   const isRunning = !!data && (data.status === 'Pending' || data.status === 'Running');
   // Prefer websocket push for this simulation, refetching on (re)connect to
   // catch anything missed during the connect window. Keep polling while it
   // runs — fast when push is down, slow as a safety net when it's up — so a
   // missed/half-open push never leaves the page stale until a manual refresh.
   const { connected } = useSimulationSocket(
-    isRunning && id ? `/ws/simulations/${id}/` : null,
+    isRunning && data ? `/ws/simulations/${data.id}/` : null,
     refetch,
     refetch,
   );
@@ -84,9 +123,10 @@ export default function MetricBasePage() {
 
   // A run that belongs to a sweep goes back to that sweep's results, not the
   // history home page — `data` is null in the loading/error states, so this
-  // falls back to home there.
+  // falls back to home there. Shared visitors have no sweep/history access at
+  // all, so there's no back button in that mode (see backButton below).
   const backTarget = data?.batchId != null ? `/batch/${data.batchId}` : '/';
-  const backButton = (
+  const backButton = !isShared && (
     <Button
       icon="pi pi-chevron-left"
       aria-label="Back"
@@ -190,34 +230,42 @@ export default function MetricBasePage() {
           </h1>
 
           <div className="flex items-center gap-3 rounded-md bg-brand-accent px-1.5 py-1">
-            <Button
-              icon="pi pi-chevron-left"
-              aria-label="Back"
-              onClick={() => navigate(backTarget)}
-              className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
-            />
+            {!isShared && (
+              <Button
+                icon="pi pi-chevron-left"
+                aria-label="Back"
+                onClick={() => navigate(backTarget)}
+                className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
+              />
+            )}
             <span className="flex-1 text-center text-lg font-bold text-black">
               {data.name} - {formatDateTime(data.completedAt)}
             </span>
-            <Button
-              icon="pi pi-replay"
-              aria-label="Re-run with the same seed"
-              tooltip={
-                data.randomSeed != null
-                  ? `Re-run with the same seed (${data.randomSeed}) for an identical run`
-                  : 'Re-run with the same seed for an identical run'
-              }
-              tooltipOptions={{ position: 'left' }}
-              loading={rerunning}
-              onClick={rerunWithSameSeed}
-              className="!rounded-md !bg-brand-accent-active !border-brand-accent-active !text-black"
-            />
+            {!isShared && (
+              <Button
+                icon="pi pi-replay"
+                aria-label="Re-run with the same seed"
+                tooltip={
+                  data.randomSeed != null
+                    ? `Re-run with the same seed (${data.randomSeed}) for an identical run`
+                    : 'Re-run with the same seed for an identical run'
+                }
+                tooltipOptions={{ position: 'left' }}
+                loading={rerunning}
+                onClick={rerunWithSameSeed}
+                className="!rounded-md !bg-brand-accent-active !border-brand-accent-active !text-black"
+              />
+            )}
             <Button
               icon="pi pi-eye"
               aria-label="View full replay"
               tooltip="View full replay"
               tooltipOptions={{ position: 'left' }}
-              onClick={() => navigate(`/simulation/${data.id}/visualisation`)}
+              onClick={() =>
+                navigate(
+                  isShared ? `/shared/${token}/visualisation` : `/simulation/${data.id}/visualisation`,
+                )
+              }
               className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
             <Button
@@ -233,9 +281,22 @@ export default function MetricBasePage() {
               aria-label="Print / save summary as PDF"
               tooltip="Print / save summary as PDF"
               tooltipOptions={{ position: 'left' }}
-              onClick={() => navigate(`/simulation/${data.id}/print`)}
+              onClick={() =>
+                navigate(isShared ? `/shared/${token}/print` : `/simulation/${data.id}/print`)
+              }
               className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
             />
+            {!isShared && (
+              <Button
+                icon="pi pi-share-alt"
+                aria-label="Share a read-only link"
+                tooltip="Share a read-only link"
+                tooltipOptions={{ position: 'left' }}
+                loading={sharing}
+                onClick={openShare}
+                className="!rounded-md !bg-brand-accent-active !border-brand-accent-active"
+              />
+            )}
           </div>
 
           <div className="grid flex-1 grid-cols-1 items-stretch gap-2 lg:grid-cols-3 lg:grid-rows-1">
@@ -258,6 +319,36 @@ export default function MetricBasePage() {
           <MetricsTimeline detail={data} />
         </div>
       </div>
+
+      <Dialog
+        header="Share this run"
+        visible={shareLink !== null}
+        onHide={() => setShareLink(null)}
+        draggable={false}
+        dismissableMask
+        style={{ width: '32rem', maxWidth: '90vw' }}
+      >
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-slate-600">
+            Anyone with this link can view this run&apos;s metrics and replay — no account
+            required. They can&apos;t rename, delete, re-run, or export it.
+          </p>
+          <div className="flex gap-2">
+            <InputText
+              readOnly
+              value={shareLink ?? ''}
+              onFocus={(e) => e.target.select()}
+              className="flex-1 bg-white"
+            />
+            <Button
+              label={shareCopied ? 'Copied!' : 'Copy'}
+              icon={shareCopied ? 'pi pi-check' : 'pi pi-copy'}
+              onClick={copyShareLink}
+              className="!border-brand-accent-active !bg-brand-accent-active !text-black"
+            />
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

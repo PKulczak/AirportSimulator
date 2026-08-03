@@ -106,3 +106,12 @@ export interface SweepResponse {
   batchId: number;
   simulations: Simulation[];
 }
+
+/** POST /api/simulations/{id}/share/ response (Slice 10.1) — a shareable,
+ * unguessable token granting read-only access to this one run's detail +
+ * visualisation, with no login required. Idempotent: repeated calls for the
+ * same run return the same token rather than minting a new one. */
+export interface ShareLink {
+  token: string;
+  createdAt: string;
+}

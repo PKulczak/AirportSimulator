@@ -20,6 +20,15 @@ function App() {
           element={<SimulationVisualisation />}
         />
         <Route path="/simulation/:id/print" element={<SimulationPrintSummary />} />
+        {/* Slice 10.1 — read-only share links: same components as above,
+         * driven by a token instead of an id (see each component's
+         * `isShared`/`token` handling). */}
+        <Route path="/shared/:token/detail" element={<MetricBasePage />} />
+        <Route
+          path="/shared/:token/visualisation"
+          element={<SimulationVisualisation />}
+        />
+        <Route path="/shared/:token/print" element={<SimulationPrintSummary />} />
         <Route path="/compare" element={<CompareRuns />} />
         <Route path="/batch/:batchId" element={<SweepResults />} />
         <Route path="/login" element={<LoginPage />} />
