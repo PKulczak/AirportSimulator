@@ -102,6 +102,13 @@ function formatDurationHours(minutes: number): string {
   return (minutes / 60).toFixed(1).replace(/\.0$/, '');
 }
 
+/** Whether a batch row has any run still Pending/Running — mirrors
+ * ACTIVE_STATUSES's use for standalone rows, just read off the aggregate
+ * batchSummary instead of a single row's own status. */
+function batchHasActiveRuns(row: Simulation): boolean {
+  return ACTIVE_STATUSES.some((s) => (row.batchSummary?.statusCounts[s] ?? 0) > 0);
+}
+
 export default function SimulationHistory() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -117,6 +124,8 @@ export default function SimulationHistory() {
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Simulation | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelBatchTarget, setCancelBatchTarget] = useState<Simulation | null>(null);
+  const [cancelBatchError, setCancelBatchError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Simulation | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBatchTarget, setDeleteBatchTarget] = useState<Simulation | null>(null);
@@ -196,6 +205,10 @@ export default function SimulationHistory() {
   const { execute: cancelSimulation, loading: cancelling } = usePost<Simulation, void>(
     cancelTarget ? `/api/simulations/${cancelTarget.id}/cancel/` : '',
   );
+  const { execute: cancelBatch, loading: cancellingBatch } = usePost<
+    { batchId: number; simulations: Simulation[] },
+    void
+  >(cancelBatchTarget?.batchId ? `/api/simulations/batch/cancel/?id=${cancelBatchTarget.batchId}` : '');
 
   const confirmDelete = async () => {
     if (!deleteTarget) {
@@ -309,6 +322,20 @@ export default function SimulationHistory() {
       return;
     }
     setCancelTarget(null);
+    refetch();
+  };
+
+  const confirmCancelBatch = async () => {
+    if (!cancelBatchTarget?.batchId) {
+      return;
+    }
+    setCancelBatchError(null);
+    const result = await cancelBatch();
+    if (result === undefined) {
+      setCancelBatchError('Failed to cancel sweep. It may have already finished.');
+      return;
+    }
+    setCancelBatchTarget(null);
     refetch();
   };
 
@@ -492,10 +519,28 @@ export default function SimulationHistory() {
               align="center"
               headerStyle={{ width: '3rem' }}
               body={(row: Simulation) => {
-                // A batch row stands in for a whole group of runs — cancel
-                // doesn't cleanly apply to a group, but delete does (it
-                // removes every run in the sweep, see confirmDeleteBatch).
+                // A batch row stands in for a whole group of runs. While any
+                // run in it is still Pending/Running this slot cancels all of
+                // them (mirrors the standalone-row cancel-while-active
+                // behaviour below); once every run is terminal it deletes the
+                // whole sweep, same as before (see confirmDeleteBatch).
                 if (row.batchId != null) {
+                  if (batchHasActiveRuns(row)) {
+                    return (
+                      <Button
+                        icon={<FontAwesomeIcon icon={faBan} />}
+                        text
+                        aria-label={`Cancel sweep ${row.name}`}
+                        tooltip="Cancel sweep"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCancelBatchError(null);
+                          setCancelBatchTarget(row);
+                        }}
+                        className="!border-transparent !bg-transparent !text-amber-600 !text-lg"
+                      />
+                    );
+                  }
                   return (
                     <Button
                       icon={<FontAwesomeIcon icon={faTrash} />}
@@ -867,6 +912,48 @@ export default function SimulationHistory() {
           Cancelled and won’t finish. Its config stays available to duplicate.
         </p>
         {cancelError && <Message severity="error" text={cancelError} className="mt-3 w-full" />}
+      </Dialog>
+
+      <Dialog
+        header="Cancel sweep"
+        visible={cancelBatchTarget !== null}
+        onHide={() => {
+          if (!cancellingBatch) {
+            setCancelBatchTarget(null);
+          }
+        }}
+        draggable={false}
+        dismissableMask={!cancellingBatch}
+        style={{ width: '28rem', maxWidth: '90vw' }}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              label="Keep running"
+              text
+              disabled={cancellingBatch}
+              onClick={() => setCancelBatchTarget(null)}
+            />
+            <Button
+              label="Cancel sweep"
+              icon={<FontAwesomeIcon icon={faBan} className="mr-2" />}
+              loading={cancellingBatch}
+              onClick={confirmCancelBatch}
+              className="!border-amber-600 !bg-amber-600 !text-white"
+            />
+          </div>
+        }
+      >
+        <p className="text-slate-700">
+          Stop every Pending/Running run in{' '}
+          <span className="font-semibold">
+            {cancelBatchTarget ? displayName(cancelBatchTarget) : ''}
+          </span>
+          ? Those runs will be marked Cancelled and won’t finish. Runs already Complete or Error
+          in this sweep are left untouched.
+        </p>
+        {cancelBatchError && (
+          <Message severity="error" text={cancelBatchError} className="mt-3 w-full" />
+        )}
       </Dialog>
     </div>
   );

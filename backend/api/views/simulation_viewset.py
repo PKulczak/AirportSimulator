@@ -151,6 +151,52 @@ class SimulationViewset(
             }
         )
 
+    @action(detail=False, methods=["post"], url_path="batch/cancel", url_name="batch-cancel")
+    def batch_cancel(self, request):
+        raw_id = request.query_params.get("id", "")
+        if not raw_id.strip().isdigit():
+            return Response(
+                {"detail": "The 'id' query parameter (a batch id) is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        batch_id = int(raw_id)
+        # Same ownership scoping as the `batch` action above — 404 rather than
+        # letting a caller cancel a batch they don't own.
+        owned_runs = self.get_queryset().filter(batch_id=batch_id)
+        if not owned_runs.exists():
+            raise Http404
+
+        # Mirrors the single-run `cancel` action's conditional-UPDATE approach,
+        # applied per status rather than a read-modify-write loop over every
+        # run, so this can't race with SimulationRunner.run() flipping any one
+        # run Pending -> Running concurrently: whichever write's WHERE clause
+        # still matches at execution time wins, and neither can clobber the
+        # other's status/completed_at.
+        pending_ids = list(
+            owned_runs.filter(status=Simulation.Status.PENDING).values_list("id", flat=True)
+        )
+        owned_runs.filter(id__in=pending_ids, status=Simulation.Status.PENDING).update(
+            cancel_requested=True,
+            status=Simulation.Status.CANCELLED,
+            completed_at=timezone.now(),
+        )
+        # Already-Running runs: just set the flag; each run's own watchdog
+        # reads it and stops (the web process never owns `status` directly).
+        owned_runs.filter(status=Simulation.Status.RUNNING).update(cancel_requested=True)
+
+        # Re-read every run that was Pending a moment ago to publish its actual
+        # resulting status — usually Cancelled, but Running if it won the race
+        # above (harmless to report either way; delivery is best-effort).
+        if pending_ids:
+            for simulation_id, new_status in Simulation.objects.filter(
+                id__in=pending_ids
+            ).values_list("id", "status"):
+                publish_simulation_status(simulation_id, new_status)
+
+        simulations = self.get_queryset().filter(batch_id=batch_id)
+        serializer = SimulationListDto(simulations, many=True)
+        return Response({"batch_id": batch_id, "simulations": serializer.data})
+
     @action(detail=False, methods=["get"], url_path="compare", url_name="compare")
     def compare(self, request):
         raw_ids = request.query_params.get("ids", "")

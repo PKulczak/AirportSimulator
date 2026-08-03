@@ -117,3 +117,52 @@ class SimulationBatchResultsTest(BaseFeatureTest):
         body = response.json()
         self.assertEqual(body["sweptVariable"], "arrivalRatePerHour")
         self.assertEqual(len(body["simulations"]), 3)
+
+    def test_cancel_batch_moves_every_non_terminal_run_to_cancelled(self):
+        batch = SimulationBatch.objects.create(swept_variable="arrivalRatePerHour")
+        pending = self.create_simulations(1, status=Simulation.Status.PENDING, batch=batch)
+        running = self.create_simulations(1, status=Simulation.Status.RUNNING, batch=batch)
+        complete = self.create_simulations(1, status=Simulation.Status.COMPLETE, batch=batch)
+        untouched = self.create_simulations(1)  # different run entirely — must survive
+
+        response = self.client.post(f"{reverse('simulation-batch-cancel')}?id={batch.id}")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        pending.refresh_from_db()
+        running.refresh_from_db()
+        complete.refresh_from_db()
+        untouched.refresh_from_db()
+
+        self.assertEqual(pending.status, Simulation.Status.CANCELLED)
+        self.assertTrue(pending.cancel_requested)
+        self.assertIsNotNone(pending.completed_at)
+
+        # The web process only flags a Running run; the worker's watchdog
+        # owns the actual status transition.
+        self.assertEqual(running.status, Simulation.Status.RUNNING)
+        self.assertTrue(running.cancel_requested)
+
+        self.assertEqual(complete.status, Simulation.Status.COMPLETE)
+        self.assertFalse(complete.cancel_requested)
+
+        self.assertEqual(untouched.status, Simulation.Status.PENDING)
+        self.assertFalse(untouched.cancel_requested)
+
+    def test_cancel_batch_requires_id_param(self):
+        response = self.client.post(reverse("simulation-batch-cancel"))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cancel_batch_404_for_unknown_batch(self):
+        response = self.client.post(f"{reverse('simulation-batch-cancel')}?id=999999")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cancel_batch_with_only_terminal_runs_is_a_no_op(self):
+        batch = SimulationBatch.objects.create()
+        complete = self.create_simulations(1, status=Simulation.Status.COMPLETE, batch=batch)
+
+        response = self.client.post(f"{reverse('simulation-batch-cancel')}?id={batch.id}")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        complete.refresh_from_db()
+        self.assertEqual(complete.status, Simulation.Status.COMPLETE)
+        self.assertFalse(complete.cancel_requested)
