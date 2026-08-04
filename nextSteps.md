@@ -62,7 +62,7 @@ not these two, both real gaps for a sweep that's still running.
 
 ## Epic B — Accounts & templates
 
-### Slice B.1 — Templates: personal by default, admin-created global templates
+### Slice B.1 — Templates: personal by default, admin-created global templates (Implemented)
 
 `Template` has no `owner` field and `TemplateViewset` applies no per-user
 scoping at all ([template.py](backend/api/models/template.py),
@@ -93,7 +93,7 @@ with staff able to publish a "global" one visible to everyone.
   anyone's; a non-staff request that tries to set `owner`/"global" directly
   is rejected or ignored, not silently honored.
 
-### Slice B.2 — Self-serve signup / password reset
+### Slice B.2 — Self-serve signup / password reset (Implemented)
 
 - **BE:** There's no self-serve account creation today — users are
   provisioned via `manage.py createsuperuser` or the Django admin only (see
@@ -111,7 +111,7 @@ with staff able to publish a "global" one visible to everyone.
 
 Motivated by finishing what the recent security/reliability pass started.
 
-### Slice C.1 — Shared cache backend for rate limiting
+### Slice C.1 — Shared cache backend for rate limiting (Implemented)
 
 - **INFRA:** The login throttle (`DEFAULT_THROTTLE_RATES["login"]`) relies on
   Django's default cache, which is per-process (`LocMemCache`) unless
@@ -160,8 +160,7 @@ Motivated by finishing what the recent security/reliability pass started.
 ## Suggested order
 
 1. ~~**Epic A**~~ — done (both slices implemented).
-2. **Epic B.1** — a decision, not code; resolve it before templates get more
-   load-bearing.
-3. **Epic C** — do before any real multi-user/production deployment, not
-   before.
+2. ~~**Epic B**~~ — done (both slices implemented).
+3. ~~**Slice C.1**~~ — done; **C.2** (per-user rate limit) is the one piece
+   left before a real multi-user/production deployment.
 4. **Epic D** — ongoing hygiene, not a one-time gate.

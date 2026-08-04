@@ -12,6 +12,7 @@ x-backend-env: &backend-env
   QUEUE_BROKER: dramatiq.brokers.redis.RedisBroker
   QUEUE_URL: redis://redis:6379/0
   CHANNEL_LAYER_URL: redis://redis:6379/0
+  CACHE_URL: redis://redis:6379/0
   AIRCRAFT_SPEED_IN_KNOTS: "140"
 
 services:

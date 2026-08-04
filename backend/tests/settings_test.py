@@ -28,6 +28,15 @@ CHANNEL_LAYERS = {
     "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"},
 }
 
+# Slice C.1 — backend.settings's CACHES points at Redis (for DRF's throttles
+# to share state across worker processes in real deployments); overridden
+# back to Django's in-process default here so the test suite (and CI, which
+# runs this backend job with no external services — see ci.yml) never needs
+# a running Redis just to exercise a throttled view.
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+}
+
 # Pinned rather than inherited from backend.settings's env.bool() read of the
 # developer's actual backend/.env — otherwise the test suite's pass/fail
 # depends on whatever REQUIRE_AUTH happens to be set to on disk locally.
@@ -35,8 +44,8 @@ CHANNEL_LAYERS = {
 REQUIRE_AUTH = False
 
 # The default login/register/password-reset rate limits are meant for real
-# traffic; DRF's throttle cache (django.core.cache.cache, LocMemCache by
-# default) persists across every test in a pytest run, and this suite alone
+# traffic; DRF's throttle cache (django.core.cache.cache, the LocMemCache
+# above) persists across every test in a pytest run, and this suite alone
 # makes well over 10 requests to each of these endpoints across its various
 # tests — so without a much higher ceiling here, an unrelated later test
 # would start seeing 429s purely from test-suite volume, not from anything

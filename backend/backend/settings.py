@@ -189,12 +189,15 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "api.permissions.IsAuthenticatedUnlessAuthDisabled",
     ),
-    # Only LoginView opts into this (via ScopedRateThrottle/throttle_scope) —
-    # deliberately not a blanket DEFAULT_THROTTLE_CLASSES, since most of the
-    # API is meant to stay fully open traffic-wise while REQUIRE_AUTH is off.
-    # Login is the one endpoint that calls Django's authenticate() with
-    # caller-supplied credentials on every request, so it's the one that
-    # needs a brute-force guard regardless of REQUIRE_AUTH.
+    # Only LoginView (and the Slice B.2 register/password-reset views) opt
+    # into this (via ScopedRateThrottle/throttle_scope) — deliberately not a
+    # blanket DEFAULT_THROTTLE_CLASSES, since most of the API is meant to
+    # stay fully open traffic-wise while REQUIRE_AUTH is off. These are the
+    # endpoints that call Django's authenticate()/create a user/send mail
+    # from caller-supplied input on every request, so they're the ones that
+    # need a brute-force/spam guard regardless of REQUIRE_AUTH. The guarantee
+    # is only real across a multi-worker deployment because CACHES (see
+    # below) is Redis-backed rather than Django's per-process default.
     "DEFAULT_THROTTLE_RATES": {
         "login": env("LOGIN_THROTTLE_RATE", default="10/min"),
         # Slice B.2 — same brute-force/spam reasoning as "login", guarding
@@ -248,6 +251,28 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {"hosts": [CHANNEL_LAYER_URL]},
     },
+}
+
+
+# Cache (Slice C.1). Backs DRF's throttles — most notably the login/register/
+# password-reset rate limits above, which are only a real guarantee if every
+# gunicorn/daphne worker process in a deployment shares one counter; Django's
+# un-configured default (LocMemCache) is per-process, so each worker would
+# otherwise enforce its own independent limit, silently multiplying the
+# effective rate by the worker count. Reuses the dramatiq/channels Redis
+# instance by default (one more dependency would be redundant); override with
+# CACHE_URL to point it elsewhere (e.g. a separate Redis db/instance).
+# Uses Django's own built-in Redis backend (available since Django 4.0) —
+# no extra package beyond `redis`, already a transitive dependency of
+# dramatiq[redis]/channels-redis.
+CACHE_URL = env("CACHE_URL", default=QUEUE_URL)
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": CACHE_URL,
+        "KEY_PREFIX": "airport",
+    }
 }
 
 
