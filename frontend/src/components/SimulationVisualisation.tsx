@@ -359,6 +359,7 @@ export default function SimulationVisualisation() {
                     max={SPEED_OPTIONS.length - 1}
                     step={1}
                     onChange={(e: SliderChangeEvent) => setSpeed(SPEED_OPTIONS[e.value as number])}
+                    aria-label={`Playback speed, currently ${speed}x`}
                   />
                 </div>
                 <Button size="small" onClick={() => setShowEventLog((prev) => !prev)}>
@@ -491,6 +492,7 @@ export default function SimulationVisualisation() {
               max={data.durationMinutes}
               step={0.5}
               onChange={(e: SliderChangeEvent) => jumpToTime(e.value as number)}
+              aria-label={`Scrub to a point in the replay, currently ${Math.round(currentTime)} of ${data.durationMinutes} minutes`}
             />
           </div>
         </div>

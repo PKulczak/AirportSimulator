@@ -135,7 +135,7 @@ Motivated by finishing what the recent security/reliability pass started.
 
 ## Epic D — Quality passes
 
-### Slice D.1 — Accessibility audit
+### Slice D.1 — Accessibility audit (Implemented)
 
 - **FE:** One inaccessible clickable-heading pattern was just fixed in
   `CompareMetricsTable.tsx`; a systematic pass across the app (keyboard

@@ -333,7 +333,23 @@ export default function SweepResults() {
                     {throughput != null ? formatCount(throughput) : '—'}
                   </td>
                   <td className="p-2 text-right text-brand-accent-active">
-                    {!isShared && <FontAwesomeIcon icon={faChevronRight} />}
+                    {!isShared && (
+                      // A real <button> (not just the row's own onClick above)
+                      // so this run is reachable/activatable via keyboard —
+                      // a <tr> isn't natively focusable, so the row click
+                      // alone left keyboard users with no way to drill in.
+                      <button
+                        type="button"
+                        aria-label={`View details for ${variableLabel} ${sweptValue(run, variable)}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/simulation/${run.id}/detail`);
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <FontAwesomeIcon icon={faChevronRight} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               );

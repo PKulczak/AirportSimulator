@@ -4,6 +4,7 @@ import { DataTable, type DataTablePageEvent } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Tag } from 'primereact/tag';
 import { Button } from 'primereact/button';
+import { Checkbox } from 'primereact/checkbox';
 import { InputText } from 'primereact/inputtext';
 import { Dialog } from 'primereact/dialog';
 import { Menu } from 'primereact/menu';
@@ -519,6 +520,28 @@ export default function SimulationHistory() {
               align="center"
               headerStyle={{ width: '3rem' }}
               body={(row: Simulation) => {
+                // Compare mode's only way to (de)select a row was clicking
+                // the row itself (`onRowClick` below) — a `<tr>` isn't
+                // natively focusable/keyboard-activatable, so a keyboard-only
+                // user had no way to use the compare feature at all. This
+                // checkbox is a real, focusable form control providing that
+                // parity; `stopPropagation` keeps its own click from also
+                // bubbling to the row's `onRowClick` and double-toggling,
+                // same as every other button in this column already does.
+                if (compareMode) {
+                  const eligible = row.status === 'Complete' && row.batchId == null;
+                  return (
+                    <Checkbox
+                      checked={compareIds.includes(row.id)}
+                      disabled={!eligible}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        toggleCompareSelection(row);
+                      }}
+                      aria-label={`Select ${row.name} for comparison`}
+                    />
+                  );
+                }
                 // A batch row stands in for a whole group of runs. While any
                 // run in it is still Pending/Running this slot cancels all of
                 // them (mirrors the standalone-row cancel-while-active

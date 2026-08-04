@@ -26,6 +26,104 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-08-04 — Slice D.1 — Accessibility audit
+
+**Slice:** D.1 — Accessibility audit
+**Status:** Done
+
+**Changes**
+- Systematic pass across every component under `frontend/src/components/`
+  (not just the pages named in the slice's own manual test plan), grepping
+  for `onClick`/`cursor-pointer`/`tabIndex` on non-native elements to find
+  siblings of the `CompareMetricsTable.tsx` pattern already fixed. Found and
+  confirmed accessible-by-default: every PrimeReact `Button`/`Slider`/
+  `Checkbox`/`Dropdown` usage in the app, `RunwaySelectionField.tsx`'s
+  `selectionMode="checkbox"` DataTable (a correct precedent for exactly this
+  class of bug), and `WeightClassMixSlider.tsx`'s already-complete custom
+  `role="slider"` + arrow-key implementation. Found and fixed three real gaps:
+  - [frontend/src/components/SimulationHistory.tsx](frontend/src/components/SimulationHistory.tsx)
+    — **the significant one**: in "Compare runs" mode, `toggleCompareSelection`
+    was only ever invoked from the `DataTable`'s `onRowClick`; a `<tr>` isn't
+    natively focusable/keyboard-activatable, so a keyboard-only user had **no
+    way to select any run for comparison at all** — the entire compare
+    feature was mouse-only. Added a `Checkbox` (a real, focusable, native
+    `<input type="checkbox">` — PrimeReact's `Checkbox`, confirmed via its
+    source) in the row's existing actions column specifically while
+    `compareMode` is active, calling the same `toggleCompareSelection(row)`
+    the row click already used; its `onChange` calls `e.stopPropagation()`
+    (the `FormEvent` type exposes this directly) so checking it doesn't also
+    bubble to `onRowClick` and double-toggle — the identical pattern the
+    column's other buttons (cancel/delete/actions) already use for the same
+    reason. Row click itself is untouched (still works for mouse users).
+  - [frontend/src/components/SweepResults.tsx](frontend/src/components/SweepResults.tsx)
+    — the sweep-results table (a hand-rolled `<table>`, not a PrimeReact
+    `DataTable`) had the identical "whole clickable `<tr>`, no keyboard
+    alternative" bug for drilling into a run's detail page — unlike
+    `SimulationHistory.tsx`, which already has a real "View details" button
+    doing the same navigation alongside its row click. Gave this table the
+    same fix: the trailing chevron cell is now a real `<button>` (not a bare
+    `FontAwesomeIcon`) with an `aria-label` identifying which run, performing
+    the identical `navigate(...)` the row click already does.
+  - [frontend/src/components/SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx)
+    — both `Slider`s (playback speed, timeline scrubber) are keyboard-operable
+    by PrimeReact default, but neither had an `aria-label`, so a screen-reader
+    user tabbing to one got no indication of what it controlled beyond
+    "slider." Added `aria-label` to each (confirmed PrimeReact's `Slider`
+    forwards `aria-*` props it doesn't recognise onto the actual
+    `role="slider"` handle element, via `DomHandler.ARIA_PROPS`, by reading
+    its source directly rather than assuming).
+- Explicitly checked and found already fine (no changes needed): icon-only
+  `Button`s all had `aria-label`; no positive `tabIndex` anywhere; form
+  fields throughout (`RequestForm`/`SweepForm`/`LoginPage`/`SignupPage`/
+  `ForgotPasswordPage`/`ResetPasswordPage`) already pair every `<label
+  htmlFor>` with a matching `id`; `Runway.tsx`'s animated occupancy display
+  and `QueueTable.tsx`'s live queue panel are read-only/non-interactive, so
+  out of scope for a keyboard/ARIA-labels/focus-order pass specifically (a
+  live-region/aria-live treatment for real-time updates would be a
+  meaningfully bigger, separate feature, not a "catch the sibling bug" fix).
+
+**Verification**
+- `npm run build` (`tsc -b` + `vite build`), `npm run lint`, `npm run test`
+  (56 passed, unchanged — no new frontend unit tests: this codebase has no
+  established component-test precedent for router/context-heavy pages like
+  `SimulationHistory.tsx`, the same reasoning prior entries gave for
+  `AuthContext`/`LoginPage`, and introducing one now for a single fix would
+  be a disproportionate new-infra decision for an accessibility pass) all
+  clean.
+- Backend untouched by this slice — full `pytest` suite not re-run (no
+  backend files changed).
+- Confirmed via the live `npm run dev` instance's own `tsc --watch` output
+  that every edit hot-reloaded with 0 errors (including the transient "used
+  before its final form" error while `Checkbox` was imported but not yet
+  wired in, self-resolved by the next edit) — no process restart was
+  needed for a frontend-only change, since Vite's dev server and `tsc
+  --watch` already pick up saved files live.
+- **The slice's own test plan — a full keyboard-only pass through
+  simulation creation, history, detail, visualisation, and compare — was
+  not performed**, for the same standing reason as every other
+  frontend-touching entry in this file: no browser-automation tool is
+  available in this environment (confirmed again this session via
+  `ToolSearch` for anything browser/playwright/screenshot-capable — none
+  found). Verification instead rests on: `tsc`/lint/build passing, the
+  existing unit-test suite staying green, and a from-source trace of the
+  actual accessibility semantics involved (native `<input type="checkbox">`/
+  `<button>` elements are unconditionally keyboard-focusable/activatable
+  regardless of runtime state; PrimeReact's `Slider` forwarding confirmed by
+  reading its compiled source directly rather than assumed from docs).
+
+**Notes**
+- The `SimulationHistory.tsx` compare-mode fix is the one genuinely
+  user-facing behavioural gap found (a whole feature was unusable via
+  keyboard) — the other two are pure ARIA/keyboard-alternative additions
+  with no visible behaviour change for an existing mouse user.
+- Deliberately did *not* refactor `SimulationHistory.tsx`'s compare
+  selection onto PrimeReact's built-in `DataTable` `selectionMode="checkbox"`
+  (the mechanism `RunwaySelectionField.tsx` already correctly uses) even
+  though it would handle this class of bug more structurally — that would
+  mean reworking how row click dual-purposes as "navigate" vs. "select"
+  depending on mode, a UX/architecture change beyond this audit's scope of
+  fixing concrete, targeted accessibility gaps with minimal blast radius.
+
 ## 2026-08-04 — Slice C.2 — General per-user simulation-creation rate limit
 
 **Slice:** C.2 — General per-user simulation-creation rate limit
