@@ -1,3 +1,9 @@
+from django.conf import settings
+from django.contrib.auth.models import User
+from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -6,6 +12,9 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from api.serializers.login_dto import LoginDto
+from api.serializers.password_reset_confirm_dto import PasswordResetConfirmDto
+from api.serializers.password_reset_request_dto import PasswordResetRequestDto
+from api.serializers.register_dto import RegisterDto
 from api.serializers.user_dto import UserDto
 
 
@@ -62,3 +71,97 @@ class CurrentUserView(APIView):
 
     def get(self, request):
         return Response(UserDto(request.user).data)
+
+
+class RegisterView(APIView):
+    """POST /api/auth/register/ — self-serve account creation (Slice B.2),
+    the only way to get an account besides `manage.py createsuperuser`/the
+    Django admin. Always open (`AllowAny`) for the same reason as LoginView.
+
+    Throttled (`register` scope): an anonymous caller can otherwise run
+    Django's password validators and hit the DB on every request with no
+    other lockout — the same brute-force/spam concern LoginView's `login`
+    scope guards against, just for account creation instead of credential
+    guessing. Auto-issues a token on success, mirroring LoginView's response
+    shape, so a fresh signup logs straight in rather than bouncing to a
+    separate login step.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "register"
+
+    def post(self, request):
+        serializer = RegisterDto(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response(
+            {"token": token.key, "user": UserDto(user).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class PasswordResetRequestView(APIView):
+    """POST /api/auth/password-reset/ — Slice B.2. Always responds
+    204 regardless of whether `email` matches an account (and only ever
+    sends mail when it does) — the same anti-enumeration principle as
+    LoginDto, applied to "does this email have an account" instead of "is
+    this the right password." Throttled (`password_reset` scope) so this
+    can't be used to mail-bomb an arbitrary address."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
+
+    def post(self, request):
+        serializer = PasswordResetRequestDto(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+
+        # filter() rather than get(): the stock User model doesn't enforce
+        # email uniqueness, so in principle more than one active account
+        # could share an address — every matching account gets its own
+        # link/token rather than silently picking one.
+        for user in User.objects.filter(email__iexact=email, is_active=True):
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            reset_url = f"{settings.FRONTEND_BASE_URL}/reset-password/{uid}/{token}/"
+            send_mail(
+                subject="Reset your Airport Modelling password",
+                message=(
+                    "Someone requested a password reset for this account.\n\n"
+                    f"Reset it here: {reset_url}\n\n"
+                    "If you didn't request this, you can safely ignore this email — "
+                    "your password hasn't been changed."
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+            )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PasswordResetConfirmView(APIView):
+    """POST /api/auth/password-reset/confirm/ — Slice B.2. Validates the
+    uid/token pair from the emailed link (see PasswordResetConfirmDto),
+    then sets the new password and rotates the DRF token: a leaked/
+    compromised token shouldn't stay valid across a reset the account owner
+    just performed. Returns a fresh token/user, mirroring LoginView, so the
+    reset itself logs the caller straight back in."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
+
+    def post(self, request):
+        serializer = PasswordResetConfirmDto(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["user"]
+        user.set_password(serializer.validated_data["password"])
+        user.save(update_fields=["password"])
+
+        Token.objects.filter(user=user).delete()
+        token = Token.objects.create(user=user)
+
+        return Response({"token": token.key, "user": UserDto(user).data})

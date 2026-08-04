@@ -8,7 +8,7 @@ import {
   usePost,
 } from '../functions/axios';
 import type { ApiError } from '../types/axios';
-import type { AuthUser, LoginResponse } from '../types/auth';
+import type { AuthTokenResponse, AuthUser, RegisterRequest } from '../types/auth';
 
 interface AuthContextValue {
   /** null when logged out (the default — REQUIRE_AUTH is off out of the box,
@@ -22,6 +22,16 @@ interface AuthContextValue {
   loginError: ApiError | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
+  registering: boolean;
+  registerError: ApiError | null;
+  register: (payload: RegisterRequest) => Promise<boolean>;
+  /** Slice B.2 — stores a {token, user} pair obtained from somewhere other
+   * than `login`/`register` (namely POST /api/auth/password-reset/confirm/,
+   * which returns the same shape so a successful reset logs the caller
+   * straight back in). Exists so ResetPasswordPage doesn't need to duplicate
+   * the token/localStorage/user bookkeeping `login` and `register` already
+   * do. */
+  completeAuth: (result: AuthTokenResponse) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -94,11 +104,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meError]);
 
+  const completeAuth = useCallback((result: AuthTokenResponse) => {
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, result.token);
+    setToken(result.token);
+    setUser(result.user);
+  }, []);
+
   const {
     execute: loginRequest,
     loading: loggingIn,
     error: loginError,
-  } = usePost<LoginResponse, { username: string; password: string }>('/api/auth/login/');
+  } = usePost<AuthTokenResponse, { username: string; password: string }>('/api/auth/login/');
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -106,12 +122,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!result) {
         return false;
       }
-      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, result.token);
-      setToken(result.token);
-      setUser(result.user);
+      completeAuth(result);
       return true;
     },
-    [loginRequest],
+    [loginRequest, completeAuth],
+  );
+
+  const {
+    execute: registerRequest,
+    loading: registering,
+    error: registerError,
+  } = usePost<AuthTokenResponse, RegisterRequest>('/api/auth/register/');
+
+  const register = useCallback(
+    async (payload: RegisterRequest) => {
+      const result = await registerRequest(payload);
+      if (!result) {
+        return false;
+      }
+      completeAuth(result);
+      return true;
+    },
+    [registerRequest, completeAuth],
   );
 
   const logout = useCallback(() => {
@@ -123,7 +155,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearAuth]);
 
   return (
-    <AuthContext.Provider value={{ user, initializing, loggingIn, loginError, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        initializing,
+        loggingIn,
+        loginError,
+        login,
+        logout,
+        registering,
+        registerError,
+        register,
+        completeAuth,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

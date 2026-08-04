@@ -197,6 +197,10 @@ REST_FRAMEWORK = {
     # needs a brute-force guard regardless of REQUIRE_AUTH.
     "DEFAULT_THROTTLE_RATES": {
         "login": env("LOGIN_THROTTLE_RATE", default="10/min"),
+        # Slice B.2 — same brute-force/spam reasoning as "login", guarding
+        # self-serve signup and password-reset-request respectively.
+        "register": env("REGISTER_THROTTLE_RATE", default="5/hour"),
+        "password_reset": env("PASSWORD_RESET_THROTTLE_RATE", default="5/hour"),
     },
 }
 
@@ -249,3 +253,21 @@ CHANNEL_LAYERS = {
 
 # Simulation engine defaults
 AIRCRAFT_SPEED_IN_KNOTS = env.int("AIRCRAFT_SPEED_IN_KNOTS", default=140)
+
+
+# Email (Slice B.2 — password reset). Defaults to Django's console backend
+# (prints to stdout) so dev/CI never needs real SMTP creds; point
+# EMAIL_BACKEND at django.core.mail.backends.smtp.EmailBackend (plus the
+# EMAIL_HOST_* vars below) for a real deployment that actually delivers mail.
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", default="localhost")
+EMAIL_PORT = env.int("EMAIL_PORT", default=25)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=False)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@airport-modelling.local")
+
+# Slice B.2 — base URL of the deployed frontend SPA, used only to build the
+# link inside a password-reset email (the backend has no page of its own to
+# send someone to). Defaults to the local Vite dev server.
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:3000")

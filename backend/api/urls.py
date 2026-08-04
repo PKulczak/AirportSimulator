@@ -1,7 +1,14 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from api.views.auth_views import CurrentUserView, LoginView, LogoutView
+from api.views.auth_views import (
+    CurrentUserView,
+    LoginView,
+    LogoutView,
+    PasswordResetConfirmView,
+    PasswordResetRequestView,
+    RegisterView,
+)
 from api.views.runway_viewset import RunwayViewset
 from api.views.shared_simulation_views import (
     SharedBatchResultsView,
@@ -22,6 +29,17 @@ urlpatterns = router.urls + [
     path("auth/login/", LoginView.as_view(), name="auth-login"),
     path("auth/logout/", LogoutView.as_view(), name="auth-logout"),
     path("auth/me/", CurrentUserView.as_view(), name="auth-me"),
+    path("auth/register/", RegisterView.as_view(), name="auth-register"),
+    path(
+        "auth/password-reset/",
+        PasswordResetRequestView.as_view(),
+        name="auth-password-reset",
+    ),
+    path(
+        "auth/password-reset/confirm/",
+        PasswordResetConfirmView.as_view(),
+        name="auth-password-reset-confirm",
+    ),
     path(
         "shared/<str:token>/detail/",
         SharedSimulationDetailView.as_view(),

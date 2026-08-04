@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { InputText } from 'primereact/inputtext';
 import { Password } from 'primereact/password';
 import { Button } from 'primereact/button';
@@ -81,6 +81,24 @@ export default function LoginPage() {
           disabled={!username.trim() || !password}
           className="!border-brand-accent-active !bg-brand-accent-active font-bold !text-white"
         />
+
+        <div className="flex justify-between text-sm text-slate-600">
+          <Link
+            to="/forgot-password"
+            className="font-semibold text-black underline decoration-brand-accent decoration-2 hover:decoration-brand-accent-hover"
+          >
+            Forgot password?
+          </Link>
+          <span>
+            No account?{' '}
+            <Link
+              to="/signup"
+              className="font-semibold text-black underline decoration-brand-accent decoration-2 hover:decoration-brand-accent-hover"
+            >
+              Sign up
+            </Link>
+          </span>
+        </div>
       </form>
     </div>
   );

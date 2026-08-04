@@ -7,6 +7,9 @@ import SimulationPrintSummary from './components/SimulationPrintSummary';
 import CompareRuns from './components/CompareRuns';
 import SweepResults from './components/SweepResults';
 import LoginPage from './components/LoginPage';
+import SignupPage from './components/SignupPage';
+import ForgotPasswordPage from './components/ForgotPasswordPage';
+import ResetPasswordPage from './components/ResetPasswordPage';
 import PageNotFound from './components/PageNotFound';
 
 function App() {
@@ -34,6 +37,9 @@ function App() {
         <Route path="/batch/:batchId" element={<SweepResults />} />
         <Route path="/shared/batch/:token" element={<SweepResults />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password/:uid/:token" element={<ResetPasswordPage />} />
         <Route path="*" element={<PageNotFound />} />
       </Route>
     </Routes>
