@@ -26,6 +26,261 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-08-04 — Slice C.1 — Shared cache backend for rate limiting
+
+**Slice:** C.1 — Shared cache backend for rate limiting
+**Status:** Done
+
+**Changes**
+- [backend/backend/settings.py](backend/backend/settings.py) — new `CACHE_URL` (defaults to
+  `QUEUE_URL`, the same Redis instance the dramatiq broker/channel layer already depend on —
+  one more dependency would be redundant) and a `CACHES` config using Django's own built-in
+  Redis backend (`django.core.cache.backends.redis.RedisCache`, available since Django 4.0 —
+  no new package needed; `redis` is already a transitive dependency of `dramatiq[redis]`/
+  `channels-redis`), with `KEY_PREFIX = "airport"` so keys are easy to pick out when eyeballing
+  a shared Redis instance directly. Updated the `DEFAULT_THROTTLE_RATES` comment, which
+  previously caveated "unless CACHES is configured" — that caveat no longer applies.
+- [backend/tests/settings_test.py](backend/tests/settings_test.py) — added an explicit `CACHES`
+  override back to `django.core.cache.backends.locmem.LocMemCache`, mirroring the existing
+  `DRAMATIQ_BROKER`/`CHANNEL_LAYERS` test-only overrides. Without this, `backend.settings`'s new
+  Redis-backed `CACHES` would be inherited as-is (`from backend.settings import *`), and the
+  backend pytest job — which `.github/workflows/ci.yml` explicitly runs with no external
+  services — would start needing a live Redis just to exercise any throttled view.
+- [backend/.env.example](backend/.env.example), [docker-compose.yml](docker-compose.yml) —
+  documented/wired `CACHE_URL`, following the exact existing `CHANNEL_LAYER_URL` convention
+  (optional, defaults to `QUEUE_URL`, spelled out explicitly in the compose file's shared env
+  anchor for clarity).
+- [nextSteps.md](nextSteps.md) — marked B.1/B.2/C.1 slice headings `(Implemented)` and updated
+  the "Suggested order" section, matching this doc's existing convention for Epic A.
+
+**Verification**
+- Full backend suite: `pytest` → 369 passed (unchanged count — this slice added no new
+  automated tests, matching its own "Test: manual" plan; verification is the live checks below).
+- Confirmed `DJANGO_SETTINGS_MODULE=tests.settings_test` resolves `settings.CACHES` to
+  `LocMemCache` (not Redis) via a one-off `django.setup()` check, proving the test override
+  actually takes effect rather than assuming it from the code alone.
+- Confirmed the real (non-test) settings resolve `CACHES` to the live Redis instance
+  (`redis://10.11.90.45:6379`), and that a cache key written from one Python process is readable
+  from a second, entirely separate process invocation — proof of genuinely shared (not
+  per-process) storage.
+- The core guarantee itself: used `rest_framework.test.APIRequestFactory` +
+  `ScopedRateThrottle` directly (bypassing HTTP/runserver) to simulate two separate worker
+  processes serving the same client IP for the `login` scope at a patched `3/min` rate — process
+  "worker A" made 3 requests (all allowed), then a **second, freshly-started** Python process
+  ("worker B") made 2 more requests for the same client and correctly got 0 allowed/2 denied.
+  Re-ran the identical two-process script against `tests.settings_test`'s `LocMemCache` for
+  contrast: there, "worker B" wrongly got its own fresh counter and allowed both of its
+  requests — reproducing, on demand, the exact bug this slice fixes.
+- Restarted all three dev processes via `TaskStop`/relaunch (not manual `taskkill`, per this
+  file's own established practice) since `settings.py` changed. One `TaskStop` call (for the
+  frontend's `npm run dev`) reported success but left the `concurrently`/`vite`/`tsc` process
+  tree still running underneath — found via a follow-up process-list check, cleaned up with a
+  single `taskkill //T //F` on the tree's root, then confirmed empty and relaunched fresh.
+  Live-`curl`ed `/api/auth/login/` (400, wrong creds) and `/api/runways/` (200) against the
+  fresh server to confirm it actually came up serving traffic.
+- Cleaned up the manual Redis test keys/throttle counters created during verification
+  afterward (self-expired via TTL by the time of the cleanup check — nothing left to remove).
+
+**Notes**
+- No new pip dependency: Django's native Redis cache backend needs only the `redis` package,
+  already present transitively.
+
+## 2026-08-04 — Slice B.2 — Self-serve signup / password reset
+
+**Slice:** B.2 — Self-serve signup / password reset
+**Status:** Done
+
+**Backend**
+- [backend/api/serializers/register_dto.py](backend/api/serializers/register_dto.py) (new) —
+  `RegisterDto`: username uniqueness (case-insensitive), Django's own `AUTH_PASSWORD_VALIDATORS`
+  run against the password (via an unsaved, in-memory `User` built from the same payload, so
+  `UserAttributeSimilarityValidator` can still compare the password against the
+  not-yet-persisted username/email), and a `password_confirm` match check.
+- [backend/api/serializers/password_reset_request_dto.py](backend/api/serializers/password_reset_request_dto.py),
+  [backend/api/serializers/password_reset_confirm_dto.py](backend/api/serializers/password_reset_confirm_dto.py)
+  (new) — the confirm DTO validates the `uid`/`token` pair via Django's own
+  `default_token_generator`/`urlsafe_base64_decode` (the same machinery Django's stock
+  password-reset views use) — a single generic "invalid or expired" error covers a garbled uid,
+  unknown/inactive user, and bad/already-used token alike, mirroring `LoginDto`'s
+  no-enumeration precedent. The token is naturally single-use: Django binds it to the user's
+  current password hash, so it stops validating the instant a reset actually succeeds.
+- [backend/api/views/auth_views.py](backend/api/views/auth_views.py) — added `RegisterView`,
+  `PasswordResetRequestView`, `PasswordResetConfirmView`, all `AllowAny` + `ScopedRateThrottle`
+  (new `register`/`password_reset` scopes — same brute-force/spam reasoning as `LoginView`'s
+  `login` scope). Register and reset-confirm both auto-issue a fresh token and return
+  `{token, user}` (mirroring `LoginView`), so a signup or a completed reset logs the caller
+  straight in; reset-confirm also deletes any pre-existing token so a leaked one doesn't survive
+  a reset the account owner just performed. The reset-request view always 204s regardless of
+  whether `email` matches an account, and only sends mail when it does (no enumeration).
+- [backend/api/urls.py](backend/api/urls.py) — added `auth/register/`, `auth/password-reset/`,
+  `auth/password-reset/confirm/`.
+- [backend/api/serializers/user_dto.py](backend/api/serializers/user_dto.py) — added `is_staff`
+  to the output (needed by the frontend for Slice B.1's staff-only checkbox, added in the same
+  session; harmless/inert for B.2 itself).
+- [backend/backend/settings.py](backend/backend/settings.py) — new `EMAIL_BACKEND` (defaults to
+  Django's console backend so dev/CI never need real SMTP creds) + `EMAIL_HOST`/`EMAIL_PORT`/
+  `EMAIL_HOST_USER`/`EMAIL_HOST_PASSWORD`/`EMAIL_USE_TLS`/`DEFAULT_FROM_EMAIL`, plus
+  `FRONTEND_BASE_URL` (used only to build the link inside a password-reset email — the backend
+  has no page of its own to send someone to) and the two new throttle rate env vars.
+- [backend/.env.example](backend/.env.example) — documented all of the above.
+- [backend/tests/settings_test.py](backend/tests/settings_test.py) — extended the existing
+  `DEFAULT_THROTTLE_RATES` test override to include `register`/`password_reset` (previously
+  only `login`) — without this, `ScopedRateThrottle.get_rate()` raises `ImproperlyConfigured`
+  for any request against the two new scopes, since the override was a full dict replace, not a
+  merge.
+
+**Frontend**
+- [frontend/src/types/auth.ts](frontend/src/types/auth.ts) — renamed `LoginResponse` to
+  `AuthTokenResponse` (now shared by login/signup/reset-confirm, all returning the same
+  `{token, user}` shape) and added `RegisterRequest`/`PasswordResetRequest`/
+  `PasswordResetConfirmRequest`.
+- [frontend/src/context/AuthContext.tsx](frontend/src/context/AuthContext.tsx) — factored the
+  "store token + user" logic out of `login` into a shared `completeAuth` helper, added
+  `register` (same shape as `login`, using it too), and exposed `completeAuth` directly so
+  `ResetPasswordPage` can call it after its own POST to `/api/auth/password-reset/confirm/`
+  succeeds, without duplicating the token/localStorage/user bookkeeping.
+- [frontend/src/functions/apiErrors.ts](frontend/src/functions/apiErrors.ts) (new) —
+  `fieldError`/`generalError`, extracting DRF's per-field (`{field: string[]}`) vs. object-level
+  (`nonFieldErrors`/`detail`) validation errors — no prior convention existed for this in the
+  frontend (existing forms are zod-validated client-side first, so backend field errors were
+  rarely surfaced granularly); needed once these new forms have no zod schema backing them.
+- [frontend/src/components/SignupPage.tsx](frontend/src/components/SignupPage.tsx),
+  [frontend/src/components/ForgotPasswordPage.tsx](frontend/src/components/ForgotPasswordPage.tsx),
+  [frontend/src/components/ResetPasswordPage.tsx](frontend/src/components/ResetPasswordPage.tsx)
+  (new) — plain controlled forms (same proportionality precedent as `LoginPage.tsx` — no
+  react-hook-form/zod for a handful of fields with only one client-side cross-field rule each:
+  passwords must match). `ResetPasswordPage` reads `uid`/`token` from the route
+  (`/reset-password/:uid/:token`, matching the emailed link) and calls `completeAuth` on success.
+- [frontend/src/App.tsx](frontend/src/App.tsx) — added `/signup`, `/forgot-password`,
+  `/reset-password/:uid/:token` routes.
+- [frontend/src/components/LoginPage.tsx](frontend/src/components/LoginPage.tsx) — added
+  "Forgot password?"/"Sign up" links.
+
+**Verification**
+- New [backend/tests/feature/registration_test.py](backend/tests/feature/registration_test.py)
+  (10 tests) and [backend/tests/feature/password_reset_test.py](backend/tests/feature/password_reset_test.py)
+  (15 tests): signup creates a usable account (token authenticates immediately); duplicate
+  username rejected (case-insensitively too); weak/too-similar-to-username password rejected;
+  mismatched password confirmation rejected; invalid email/username rejected; reachable under
+  `REQUIRE_AUTH`; reset-request sends mail only for a known+active email and always 204s either
+  way; reset-confirm changes the password and logs in, revokes the old auth token, rejects a
+  garbled uid/bad token/reused token/mismatched confirm/weak password/inactive user; both new
+  throttle scopes actually throttle. Full backend suite: `pytest` → 369 passed (was 344; +25).
+- Frontend: `npm run build` (tsc + vite), `npm run lint`, `npm run test` (56 passed, unchanged)
+  all clean.
+- Live end-to-end verification against the real dev Postgres/Redis stack (after discovering the
+  new migration hadn't been applied there yet — see Slice B.1's entry — same DB): registered a
+  real account over HTTP and confirmed its token authenticated `/api/auth/me/`; confirmed a
+  duplicate username and a common/weak password both 400; requested a password reset for that
+  account and read the actual emailed reset link straight out of the console-email-backend's
+  output in the live `runserver` process's own stdout (no need to fake the token); confirmed a
+  wrong token 400s; confirmed the real uid/token from that email successfully changed the
+  password and returned a fresh token; confirmed the *old* token now 401s on `/api/auth/me/`;
+  confirmed logging in with the new password works; confirmed reusing the same reset link a
+  second time no longer succeeds. Cleaned up the smoke-test accounts afterward.
+- While restarting the dev server for this work, found a `runserver` process pair from an
+  earlier `taskkill` in the same session that wasn't actually bound to port 8000 (confirmed via
+  `Get-NetTCPConnection`) — stopped it properly via `TaskStop` (the tracked background-task
+  mechanism) rather than another manual `taskkill`, then relaunched a single clean instance
+  before doing the live checks above.
+
+**Notes**
+- Scope was explicitly narrowed via `AskUserQuestion`: the slice's own text marks password
+  reset as optional ("if this is ever used beyond a single trusted team"), and no email
+  backend/SMTP config existed anywhere in the project yet. The user chose "signup + password
+  reset" over "signup only" when asked, so both were built; `EMAIL_BACKEND` defaults to the
+  console backend precisely so this didn't require any real SMTP credentials to exist yet.
+- Both signup and a completed password reset log the caller straight in (auto-issued token,
+  same response shape as login) rather than bouncing to a separate login step — a deliberate
+  UX choice, not requested verbatim in the slice text but consistent with "signup creates a
+  usable account" from its own test bullet.
+
+## 2026-08-04 — Slice B.1 — Templates: personal by default, admin-created global templates
+
+**Slice:** B.1 — Templates: personal by default, admin-created global templates
+**Status:** Done
+
+**Backend**
+- [backend/api/models/template.py](backend/api/models/template.py) — added a nullable `owner`
+  FK to `settings.AUTH_USER_MODEL` (`SET_NULL`, `related_name="templates"`), mirroring
+  `Simulation.owner` exactly: `owner = null` means "global" (visible to everyone), reusing the
+  same "no owner" convention rather than a separate boolean column. Added an `is_global`
+  property (`owner_id is None`).
+- [backend/api/migrations/0016_template_owner.py](backend/api/migrations/0016_template_owner.py)
+  (generated, applied to the dev Postgres DB — initially missed on the first live check, which
+  surfaced as a `ProgrammingError` on `POST /api/templates/` until `manage.py migrate` was run
+  against the real dev DB, not just the sqlite test DB).
+- [backend/api/serializers/template_dto.py](backend/api/serializers/template_dto.py) — added an
+  `is_global` field that does double duty: on input it's the caller's raw "make this global"
+  request (a plain `BooleanField`, not tied to the model directly); on output it reflects the
+  `is_global` model property, so it always matches what actually got persisted regardless of
+  what a non-staff caller tried to request.
+- [backend/api/views/template_viewset.py](backend/api/views/template_viewset.py) —
+  `get_queryset()` now scopes like `SimulationViewset`'s: a non-staff caller sees their own
+  templates plus every global one for read actions (list/retrieve), but only their own for
+  `destroy` (a global template is visible but never deletable by a non-staff caller — 404, not
+  403, matching the existing ownership-scoping precedent); staff/anonymous see and can act on
+  everything, same as `Simulation`. A custom `create()` pops `is_global` out of
+  `validated_data` and resolves it against `request.user.is_staff` itself — a non-staff
+  attempt to set it is silently ignored (their template is always personal), not honoured or
+  rejected with an error.
+- [backend/api/serializers/user_dto.py](backend/api/serializers/user_dto.py) — added `is_staff`
+  to the output, needed by the frontend to gate the "make global" checkbox.
+- [backend/tests/base_test.py](backend/tests/base_test.py) — added a `create_templates()` test
+  helper, mirroring the existing `create_simulations()`.
+
+**Frontend**
+- [frontend/src/types/auth.ts](frontend/src/types/auth.ts),
+  [frontend/src/types/template.ts](frontend/src/types/template.ts) — added `AuthUser.isStaff`,
+  `Template.isGlobal`, `CreateTemplateRequest.isGlobal`.
+- [frontend/src/schemas/simulationForm.ts](frontend/src/schemas/simulationForm.ts) —
+  `toCreateTemplateRequest` gained an optional `isGlobal` parameter.
+- [frontend/src/components/RequestForm.tsx](frontend/src/components/RequestForm.tsx) — the
+  "Save as Template" dialog shows a "Make this template available to everyone" checkbox only
+  when `useAuth().user?.isStaff`.
+- [frontend/src/components/TemplatePickerDialog.tsx](frontend/src/components/TemplatePickerDialog.tsx)
+  — global templates get a small "Global" `Tag` badge next to their name; the per-row delete
+  button is hidden entirely (not just disabled) for a global template when the viewer isn't
+  staff, rather than showing it and letting the backend 404 the click.
+
+**Verification**
+- New [backend/tests/feature/template_ownership_test.py](backend/tests/feature/template_ownership_test.py)
+  (16 tests, mirroring `simulation_ownership_test.py`'s structure): non-staff sees own + global
+  templates but not another user's personal ones (and the list correctly flags which is which);
+  non-staff cannot delete/retrieve another user's personal template or delete (though can still
+  retrieve) a global one; staff can create a global template (`owner is None`) and can delete
+  anyone's, including global; a non-staff request that tries to set `isGlobal` directly is
+  silently ignored, not honoured. Full backend suite: `pytest` → 344 passed (was 328; +16).
+- Frontend: `npm run build`, `npm run lint`, `npm run test` (56 passed, unchanged) all clean.
+- Live-verified against the real dev Postgres DB: created a staff user and two regular users
+  with tokens via `manage.py shell`; confirmed `GET /api/auth/me/` returns `isStaff` correctly
+  for both; confirmed the staff user's `isGlobal: true` create request actually persists
+  `owner: null`; confirmed a regular user's identical `isGlobal: true` attempt is silently
+  ignored (`owner` stays their own id); confirmed a second regular user's list only shows their
+  own templates plus every global one (including pre-existing legacy templates with no owner
+  from before this slice, which the new "owner=null means global" convention correctly now
+  treats as global too); confirmed that same user gets 404 deleting either another user's
+  personal template or the global one. Cleaned up all smoke-test users/templates afterward.
+- Restarted all three dev processes for this change; found two separate generations of
+  `runserver` already running (one from several hours earlier in the same session, one more
+  recent — `rundramatiq`/the frontend dev server each had only one), killed every one of them,
+  confirmed empty via `Get-NetTCPConnection` against the Redis broker host (no orphaned
+  `multiprocessing.spawn_main` children), then started exactly one fresh instance of each, per
+  this file's/CLAUDE.md's established practice.
+
+**Notes**
+- The migration-not-yet-applied `ProgrammingError` surfaced only on the *live* dev DB (sqlite
+  test DB migrations run automatically per test run) — a reminder that `makemigrations`
+  succeeding and the test suite passing don't by themselves prove a real deployment's DB is
+  actually up to date; worth a `manage.py migrate` check specifically before live-verifying any
+  slice that adds a model field.
+- Pre-existing templates created before this slice (no `owner` column existed) now read as
+  `owner = null` → `isGlobal: true` after the migration — i.e. every template that existed
+  before B.1 is implicitly "promoted" to global for every user. This wasn't a design decision
+  made explicitly for this slice, but falls directly out of reusing `Simulation.owner`'s exact
+  same "null means no owner" convention, which the slice's own text specified verbatim
+  ("`owner = null` means 'global.'").
+
 ## 2026-08-03 — Slice A.2 — Share a sweep or compare view read-only
 
 **Slice:** A.2 — Share a sweep or compare view read-only
