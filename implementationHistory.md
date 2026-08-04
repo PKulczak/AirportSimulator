@@ -26,6 +26,76 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-08-04 — Slice C.2 — General per-user simulation-creation rate limit
+
+**Slice:** C.2 — General per-user simulation-creation rate limit
+**Status:** Done
+
+**Changes**
+- [backend/backend/settings.py](backend/backend/settings.py) — new
+  `MAX_IN_FLIGHT_SIMULATIONS_PER_USER` (env-configurable, default 100 — kept
+  comfortably above `SimulationSweepCreationDto.MAX_SWEEP_RUNS` (50) so a
+  single full-size sweep always fits for a user starting from zero).
+- [backend/api/views/simulation_viewset.py](backend/api/views/simulation_viewset.py)
+  — new `_in_flight_cap_response(owner, additional_count)` helper: counts
+  the owner's `Pending`/`Running` runs (`exclude(status__in=Simulation.
+  TERMINAL_STATUSES)`) and returns a 429 with a clear `detail` message if
+  adding `additional_count` more would exceed the cap, else `None`. Wired
+  into both `create()` (additional_count=1) and `sweep()` (additional_count
+  = the actual number of runs the sweep would create, read from
+  `serializer.validated_data["_run_configs"]` after validation, so the whole
+  sweep is rejected atomically up front rather than partially creating runs
+  before hitting the cap mid-batch). Anonymous requests (no owner) are
+  exempt — same "no owner to scope by without a real caller" precedent as
+  ownership scoping itself (Slice 9.2); staff are **not** exempt (unlike the
+  ownership-visibility bypass) since this protects the shared dramatiq
+  queue/worker capacity regardless of who the caller is.
+- [backend/.env.example](backend/.env.example) — documented
+  `MAX_IN_FLIGHT_SIMULATIONS_PER_USER`.
+- No frontend changes needed: both `RequestForm.tsx` and `SweepForm.tsx`
+  already render `submitError.body?.detail` as their generic error message,
+  so the new 429's `{"detail": "..."}` shape surfaces automatically.
+
+**Verification**
+- New [backend/tests/feature/simulation_in_flight_cap_test.py](backend/tests/feature/simulation_in_flight_cap_test.py)
+  (9 tests, `@override_settings(MAX_IN_FLIGHT_SIMULATIONS_PER_USER=3)` for a
+  fast/deterministic cap): single-create succeeds right up to the cap and
+  429s (with no row created) exactly at it; `Running` runs count toward the
+  cap same as `Pending`; `Complete`/`Error`/`Cancelled` runs don't count at
+  all; the cap is scoped per-user (another user's in-flight runs don't
+  count against you); staff are also capped; anonymous requests are exempt
+  even with many pre-existing unowned `Pending` runs; a sweep that fits
+  exactly succeeds, and one that would exceed the cap 429s with **nothing**
+  created (`SimulationBatch.objects.count() == 0`, confirming atomicity).
+  Full backend suite: `pytest` → 378 passed (was 369; +9).
+- Live-verified against the real dev Postgres DB: bulk-created 100 `Pending`
+  `Simulation` rows directly for a throwaway user (bypassing the API, to
+  avoid 100 real HTTP round-trips) to reach the real default cap; confirmed
+  a further single-run `POST` 429s with the exact expected message; flipped
+  one row to `Complete` to free a slot and confirmed the next single-run
+  `POST` then succeeds (201); confirmed a sweep request (needing 3 more
+  slots with 0 free) 429s and creates no `SimulationBatch`/rows at all.
+  Cleaned up the throwaway user and all 101 simulations afterward.
+- Restarted all three dev processes (per this file's established practice,
+  even though this change is backend-only): `TaskStop` again left the
+  frontend's `concurrently`/`vite`/`tsc` tree running underneath (the same
+  recurring gap as the last two restarts in this session) — caught it with
+  a follow-up process check and tree-killed it before relaunching a single
+  clean instance of each.
+
+**Notes**
+- The cap is a soft, best-effort check (read-then-decide, not a
+  `SELECT ... FOR UPDATE`-guarded atomic counter) — two concurrent requests
+  from the same user right at the boundary could in principle both read a
+  count just under the cap and both succeed, overshooting it by a small
+  amount. Treated as acceptable for the same reason `MAX_RUNWAYS`/
+  `MAX_SWEEP_RUNS` aren't concurrency-safe either: this is a business-rule
+  guard against sustained abuse, not a hard security/capacity invariant.
+- 429 (not 400) chosen for the rejection status, matching the slice's own
+  "429s or 400s" allowance and DRF's existing convention for this codebase's
+  other "too much from you right now" responses (login/register/
+  password-reset throttling).
+
 ## 2026-08-04 — Slice C.1 — Shared cache backend for rate limiting
 
 **Slice:** C.1 — Shared cache backend for rate limiting

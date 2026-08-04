@@ -1,5 +1,6 @@
 import csv
 
+from django.conf import settings
 from django.db import transaction
 from django.http import Http404, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
@@ -71,6 +72,29 @@ class SimulationViewset(
     def _owner(self):
         return self.request.user if self.request.user.is_authenticated else None
 
+    def _in_flight_cap_response(self, owner, additional_count):
+        # Slice C.2 — anonymous requests have no owner to scope by (same
+        # precedent as ownership scoping itself: there's nothing to cap
+        # per-caller without a real authenticated user), so only an owned
+        # request is checked at all.
+        if owner is None:
+            return None
+        in_flight = Simulation.objects.filter(owner=owner).exclude(
+            status__in=Simulation.TERMINAL_STATUSES
+        ).count()
+        cap = settings.MAX_IN_FLIGHT_SIMULATIONS_PER_USER
+        if in_flight + additional_count > cap:
+            return Response(
+                {
+                    "detail": (
+                        f"You already have {in_flight} simulation(s) queued or running "
+                        f"(max {cap} at once). Wait for one to finish before starting more."
+                    )
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        return None
+
     def get_serializer_class(self):
         if self.action == "create":
             return SimulationCreationDto
@@ -83,7 +107,11 @@ class SimulationViewset(
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        simulation = serializer.save(owner=self._owner())
+        owner = self._owner()
+        cap_response = self._in_flight_cap_response(owner, additional_count=1)
+        if cap_response is not None:
+            return cap_response
+        simulation = serializer.save(owner=owner)
 
         run_simulation.send(simulation.id)
 
@@ -103,7 +131,12 @@ class SimulationViewset(
     def sweep(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        simulations = serializer.save(owner=self._owner())
+        owner = self._owner()
+        run_count = len(serializer.validated_data["_run_configs"])
+        cap_response = self._in_flight_cap_response(owner, additional_count=run_count)
+        if cap_response is not None:
+            return cap_response
+        simulations = serializer.save(owner=owner)
 
         for simulation in simulations:
             run_simulation.send(simulation.id)

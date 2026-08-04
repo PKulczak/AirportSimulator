@@ -214,6 +214,20 @@ REST_FRAMEWORK = {
 # provision users via `manage.py createsuperuser` or the admin).
 REQUIRE_AUTH = env.bool("REQUIRE_AUTH", default=False)
 
+# Slice C.2 — caps how many Pending/Running runs one authenticated user can
+# have queued at once (across single-run *and* sweep creation combined),
+# guarding the shared dramatiq queue/worker capacity against one user
+# repeatedly queuing more work than it can ever drain, one legitimately-sized
+# request at a time — the per-request caps (MAX_RUNWAYS, MAX_SWEEP_RUNS, the
+# duration cap) only bound a single request, not the total in flight across
+# many. Set comfortably above MAX_SWEEP_RUNS (see
+# simulation_sweep_creation_dto.py) so a single full-size sweep always fits
+# for a user starting from zero. Anonymous requests (no REQUIRE_AUTH, no
+# owner to scope by) are exempt, same precedent as ownership scoping itself.
+MAX_IN_FLIGHT_SIMULATIONS_PER_USER = env.int(
+    "MAX_IN_FLIGHT_SIMULATIONS_PER_USER", default=100
+)
+
 JSON_CAMEL_CASE = {
     "RENDERER_CLASS": "rest_framework.renderers.JSONRenderer",
     "PARSER_CLASS": "rest_framework.parsers.JSONParser",

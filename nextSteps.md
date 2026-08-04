@@ -122,7 +122,7 @@ Motivated by finishing what the recent security/reliability pass started.
 - **Test:** manual — confirm the rate limit holds across multiple worker
   processes.
 
-### Slice C.2 — General per-user simulation-creation rate limit
+### Slice C.2 — General per-user simulation-creation rate limit (Implemented)
 
 - **BE:** Single-run creation and the sweep endpoint have per-request size
   caps now (max 10 runways, max 50 sweep runs, capped duration), but nothing
@@ -161,6 +161,5 @@ Motivated by finishing what the recent security/reliability pass started.
 
 1. ~~**Epic A**~~ — done (both slices implemented).
 2. ~~**Epic B**~~ — done (both slices implemented).
-3. ~~**Slice C.1**~~ — done; **C.2** (per-user rate limit) is the one piece
-   left before a real multi-user/production deployment.
+3. ~~**Epic C**~~ — done (both slices implemented).
 4. **Epic D** — ongoing hygiene, not a one-time gate.
