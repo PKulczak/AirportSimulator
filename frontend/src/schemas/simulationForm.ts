@@ -400,6 +400,7 @@ export function templateToFormValues(template: Template): SimulationFormValues {
 export function toCreateTemplateRequest(
   templateName: string,
   values: SimulationFormValues,
+  isGlobal?: boolean,
 ): CreateTemplateRequest {
   return {
     name: templateName.trim(),
@@ -423,6 +424,7 @@ export function toCreateTemplateRequest(
       operationalStatus:
         (values.runwayInitialStatus[String(runwayId)] as OperationalStatus) ?? 'Available',
     })),
+    ...(isGlobal ? { isGlobal: true } : {}),
   };
 }
 

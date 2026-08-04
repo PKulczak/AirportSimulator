@@ -450,6 +450,7 @@ describe('templateToFormValues', () => {
       { runwayId: 2, operatingMode: 'ArrivalsOnly' },
     ],
     createdAt: '2026-01-01T00:00:00Z',
+    isGlobal: false,
   };
 
   it('leaves the simulation name blank rather than copying the template name', () => {

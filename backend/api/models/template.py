@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from api.managers.template_manager import TemplateManager
@@ -35,6 +36,20 @@ class Template(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Slice B.1 — personal-by-default templates. Nullable: null means
+    # "global" (visible to every user), mirroring the "no owner" convention
+    # used elsewhere (see `Simulation.owner`) rather than a separate boolean,
+    # so there's one source of truth for who a template belongs to. SET_NULL
+    # rather than CASCADE: deleting a user account demotes their templates to
+    # global instead of destroying them.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="templates",
+    )
+
     objects = TemplateManager()
 
     class Meta:
@@ -42,3 +57,7 @@ class Template(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_global(self):
+        return self.owner_id is None

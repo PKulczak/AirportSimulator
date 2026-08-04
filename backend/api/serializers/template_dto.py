@@ -23,9 +23,18 @@ class TemplateDto(serializers.ModelSerializer):
     toggle all fixed then and there), so every rule that would apply to
     actually creating a Simulation from this same config applies equally well
     right now — there's no "applies only later" subset to skip.
+
+    `is_global` doubles as both the create-time request ("make this visible to
+    everyone") and the read-time indicator (whether `owner` ended up null) —
+    on input it's just the caller's raw request, which `TemplateViewset`
+    resolves against `request.user.is_staff` (not this serializer) before
+    deciding the real `owner`; on output it reflects the model's `is_global`
+    property, so it always matches what actually got persisted regardless of
+    what a non-staff caller tried to request.
     """
 
     runways = SimulationRunwayCreationDto(many=True)
+    is_global = serializers.BooleanField(required=False, default=False)
     aircraft_speed_knots = serializers.IntegerField(required=False, min_value=1)
     # Capped to mirror SimulationCreationDto/the frontend's zod schema (24h
     # max) — a template with an unbounded duration would happily save, then
@@ -76,6 +85,7 @@ class TemplateDto(serializers.ModelSerializer):
             "weather_condition",
             "runways",
             "created_at",
+            "is_global",
         ]
         read_only_fields = ["id", "created_at"]
 

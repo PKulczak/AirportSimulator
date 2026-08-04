@@ -4,9 +4,11 @@ import { Column } from 'primereact/column';
 import { Dialog } from 'primereact/dialog';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
+import { Tag } from 'primereact/tag';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrash } from '@fortawesome/free-solid-svg-icons';
 import { useDelete, useGet } from '../functions/axios';
+import { useAuth } from '../context/AuthContext';
 import { WEATHER_CONDITION_OPTIONS } from '../schemas/simulationForm';
 import type { Page } from '../types/common';
 import type { Template } from '../types/template';
@@ -35,6 +37,12 @@ export default function TemplatePickerDialog({
   onHide,
   onSelect,
 }: TemplatePickerDialogProps) {
+  const { user } = useAuth();
+  // Non-staff can see a global template (it's in their own list) but never
+  // rename/delete it — only its creator's staff-only checkbox published it,
+  // and the backend 404s a non-staff attempt regardless, so the delete
+  // action is hidden entirely rather than shown-then-403'd (see Slice B.1).
+  const canManageGlobal = user?.isStaff ?? false;
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -97,7 +105,15 @@ export default function TemplatePickerDialog({
           onPage={onPage}
           emptyMessage="No saved templates yet"
         >
-          <Column field="name" header="Name" />
+          <Column
+            header="Name"
+            body={(row: Template) => (
+              <div className="flex items-center gap-2">
+                <span>{row.name}</span>
+                {row.isGlobal && <Tag value="Global" severity="info" />}
+              </div>
+            )}
+          />
           <Column
             header="Runways"
             alignHeader="center"
@@ -129,14 +145,16 @@ export default function TemplatePickerDialog({
             body={(row: Template) => (
               <div className="flex justify-end gap-2">
                 <Button label="Use" size="small" onClick={() => onSelect(row)} />
-                <Button
-                  icon={<FontAwesomeIcon icon={faTrash} />}
-                  text
-                  aria-label={`Delete template ${row.name}`}
-                  tooltip="Delete template"
-                  onClick={() => setDeleteTarget(row)}
-                  className="!border-transparent !bg-transparent !text-red-600"
-                />
+                {(canManageGlobal || !row.isGlobal) && (
+                  <Button
+                    icon={<FontAwesomeIcon icon={faTrash} />}
+                    text
+                    aria-label={`Delete template ${row.name}`}
+                    tooltip="Delete template"
+                    onClick={() => setDeleteTarget(row)}
+                    className="!border-transparent !bg-transparent !text-red-600"
+                  />
+                )}
               </div>
             )}
           />

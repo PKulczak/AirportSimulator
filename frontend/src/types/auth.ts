@@ -5,6 +5,7 @@ export interface AuthUser {
   id: number;
   username: string;
   email: string;
+  isStaff: boolean;
 }
 
 /** POST /api/auth/login/ response body. */

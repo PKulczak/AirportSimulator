@@ -8,7 +8,9 @@ import { Dropdown } from 'primereact/dropdown';
 import { Button } from 'primereact/button';
 import { Message } from 'primereact/message';
 import { Dialog } from 'primereact/dialog';
+import { Checkbox } from 'primereact/checkbox';
 import { usePost } from '../functions/axios';
+import { useAuth } from '../context/AuthContext';
 import RunwaySelectionField from './RunwaySelectionField';
 import WeightClassMixSlider, { type WeightClassMix } from './WeightClassMixSlider';
 import {
@@ -39,6 +41,7 @@ interface RequestFormProps {
 }
 
 export default function RequestForm({ onCreated, initialValues }: RequestFormProps) {
+  const { user } = useAuth();
   const { execute, loading: submitting, error: submitError } = usePost<
     Simulation,
     CreateSimulationRequest
@@ -66,6 +69,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
 
   const [saveTemplateVisible, setSaveTemplateVisible] = useState(false);
   const [templateNameInput, setTemplateNameInput] = useState('');
+  const [saveTemplateGlobal, setSaveTemplateGlobal] = useState(false);
 
   // Re-seed the form when the caller swaps in new initial values (e.g. opening
   // Duplicate for a different run without remounting the form).
@@ -127,6 +131,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
       return;
     }
     setTemplateNameInput('');
+    setSaveTemplateGlobal(false);
     setSaveTemplateVisible(true);
   };
 
@@ -137,7 +142,7 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
       return;
     }
     const created = await createTemplate(
-      toCreateTemplateRequest(templateNameInput, getValues()),
+      toCreateTemplateRequest(templateNameInput, getValues(), saveTemplateGlobal),
     );
     if (created) {
       setSaveTemplateVisible(false);
@@ -459,6 +464,18 @@ export default function RequestForm({ onCreated, initialValues }: RequestFormPro
           </small>
           {templateNameInput.length > 0 && templateNameError && (
             <small className="text-red-600">{templateNameError}</small>
+          )}
+          {user?.isStaff && (
+            <div className="mt-2 flex items-center gap-2">
+              <Checkbox
+                inputId="template-global"
+                checked={saveTemplateGlobal}
+                onChange={(e) => setSaveTemplateGlobal(e.checked ?? false)}
+              />
+              <label htmlFor="template-global" className="text-sm text-slate-700">
+                Make this template available to everyone
+              </label>
+            </div>
           )}
           {saveTemplateError && (
             <Message

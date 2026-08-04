@@ -21,6 +21,10 @@ export interface Template {
   weatherCondition: WeatherCondition;
   runways: SimulationRunwayConfig[];
   createdAt: string;
+  /** Slice B.1 — true when `owner` is null, i.e. visible to every user, not
+   * just its creator. Only staff can create one (see `CreateTemplateRequest`'s
+   * `isGlobal`); a non-staff caller can see one but never rename/delete it. */
+  isGlobal: boolean;
 }
 
 /** POST /api/templates/ request body. */
@@ -37,4 +41,8 @@ export interface CreateTemplateRequest {
   lightPercentage?: number;
   weatherCondition?: WeatherCondition;
   runways: SimulationRunwayConfig[];
+  /** Slice B.1 — "make this template available to everyone." Only honoured
+   * server-side when the caller is staff; ignored otherwise, so it's safe to
+   * omit entirely for non-staff callers. */
+  isGlobal?: boolean;
 }

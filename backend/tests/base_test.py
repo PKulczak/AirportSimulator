@@ -9,6 +9,7 @@ from api.models import (
     Simulation,
     SimulationRunway,
     SimulationRunwayEvent,
+    Template,
 )
 
 
@@ -90,6 +91,22 @@ class BaseFeatureTest(TestCase):
         }
         defaults.update(overrides)
         return AircraftEvent.objects.create(**defaults)
+
+    def create_templates(self, count=1, **overrides):
+        templates = []
+        for i in range(count):
+            defaults = {
+                "name": f"Template {i}",
+                "arrival_rate_per_hour": 10,
+                "departure_rate_per_hour": 10,
+                "duration_minutes": 60,
+                "max_wait_minutes": 15,
+                "aircraft_speed_knots": 140,
+                "include_closures": False,
+            }
+            defaults.update(overrides)
+            templates.append(Template.objects.create(**defaults))
+        return templates if count > 1 else templates[0]
 
     def create_runway_event(self, simulation_runway=None, **overrides):
         if simulation_runway is None:
