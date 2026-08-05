@@ -11,6 +11,7 @@ import {
   usePollWhile,
 } from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
+import { notify, useNotifyOnComplete } from '../functions/notifications';
 import { useRunways } from '../context/RunwayContext';
 import {
   deriveRunwayStates,
@@ -29,6 +30,7 @@ import Runway, { type RunwayOccupancy } from './Runway';
 import QueueTable from './QueueTable';
 import SimulationEventLog from './SimulationEventLog';
 import LoadingScreen from './LoadingScreen';
+import NotifyToggle from './NotifyToggle';
 import backgroundImage from '../assets/Background.png';
 
 // At 1x, one tick fires per second and advances the sim clock by
@@ -84,6 +86,19 @@ export default function SimulationVisualisation() {
     refetch,
   );
   usePollWhile(isRunning, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
+
+  // Slice D.2: alert the user even if they've switched away from this tab by
+  // the time the run finishes and its replay becomes available — fires only
+  // on the Pending/Running -> terminal transition (never on mount).
+  useNotifyOnComplete(isRunning, () => {
+    if (!raw) {
+      return;
+    }
+    notify(
+      raw.status === 'Error' ? 'Simulation failed' : 'Simulation complete',
+      `"${raw.name}" has finished — its replay is ready.`,
+    );
+  });
 
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -254,10 +269,13 @@ export default function SimulationVisualisation() {
                 }
               />
               {!isError && !isCancelled && (
-                <p className="text-sm text-slate-500">
-                  This page refreshes automatically — the replay will appear as soon as the
-                  simulation completes.
-                </p>
+                <>
+                  <p className="text-sm text-slate-500">
+                    This page refreshes automatically — the replay will appear as soon as the
+                    simulation completes.
+                  </p>
+                  <NotifyToggle />
+                </>
               )}
               {!isCancelled && (
                 <Button

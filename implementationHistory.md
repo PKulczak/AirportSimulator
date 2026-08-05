@@ -26,6 +26,94 @@ change). Keep entries factual and specific — what changed, where, and how it w
 
 <!-- Add new entries below this line, newest first. -->
 
+## 2026-08-04 — Slice D.2 — Notify beyond the open tab
+
+**Slice:** D.2 — Notify beyond the open tab
+**Status:** Done
+
+**Changes**
+- No backend changes — this slice is purely client-side by design (the slice
+  itself calls out "no backend change" as the point: websocket push and
+  polling both already exist, but both require the tab to be open).
+- [frontend/src/functions/notifications.ts](frontend/src/functions/notifications.ts)
+  (new) — thin wrapper around the Web Notifications API:
+  `isNotificationSupported`/`getNotificationPermission`/
+  `requestNotificationPermission` (must be called from a user gesture — Safari
+  silently ignores calls made outside one), and `notify(title, body)`, which
+  only shows a notification if permission is `granted` *and* the tab isn't
+  currently the focused/visible one (`document.visibilityState`/
+  `document.hasFocus()`) — if the user is already looking at the page, the
+  on-page status update is enough and a system notification on top would just
+  be noise. Also exports `useNotifyOnComplete(active, onComplete)`, a hook
+  that fires `onComplete` exactly once on the `true -> false` edge of
+  `active` — deliberately not on mount (nothing just completed if the page
+  loads onto an already-terminal run) and not while `active` stays `true`
+  across re-renders.
+- [frontend/src/components/NotifyToggle.tsx](frontend/src/components/NotifyToggle.tsx)
+  (new) — shared opt-in control rendered only while the thing it's attached
+  to is still Pending/Running: a button ("Notify me when this finishes") that
+  requests permission on click; once granted, it becomes a static hint
+  instead; renders nothing at all if the browser doesn't support the API or
+  the user has already denied it (nothing actionable to show either way).
+- Wired `useNotifyOnComplete` + `<NotifyToggle />` into the three pages that
+  already track a Pending/Running -> terminal transition via the existing
+  `isRunning`/`hasActiveRuns` booleans driving `usePollWhile`:
+  - [MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx) — one
+    simulation; notifies "Simulation complete"/"Simulation failed" with the
+    run's name.
+  - [SweepResults.tsx](frontend/src/components/SweepResults.tsx) — notifies
+    once every run in the batch has reached a terminal state.
+  - [SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx)
+    — notifies once the run finishes and its replay becomes available.
+  `SimulationHistory.tsx`'s list view (which tracks *all* runs at once, not
+  a single named resource) was deliberately left out: "notify whichever one
+  of potentially several concurrent runs just finished" needs per-row
+  tracking to avoid firing on the wrong row or repeatedly, which is a step up
+  in scope from the slice's own test plan ("start a run, switch tabs,
+  confirm a notification fires") — a natural follow-up, not this slice.
+
+**Verification**
+- `npm run build` (`tsc -b` + `vite build`), `npm run lint`, `npm run test`
+  (56 passed, unchanged — no new frontend unit tests, matching this
+  codebase's established lack of component-test infra for router/context-heavy
+  pages, same reasoning as the D.1 entry below) all clean.
+- Backend untouched by this slice — full `pytest` suite not re-run (no
+  backend files changed).
+- Did a full clean restart of all three dev processes (`runserver`,
+  `rundramatiq`, `npm run dev`) per this file's own standing convention, even
+  though only frontend files changed. While checking for stray processes
+  first (also per convention), found the *actual* running frontend dev
+  server was an orphaned process tree: its recorded parent PID had already
+  exited, so it was invisible under the specific bash PID the "start
+  frontend" background task was tracked by — a new variant of the
+  stray-process failure mode this file already documents (previously seen
+  for `rundramatiq` and its `spawn_main` children). Found it by walking the
+  live `vite`/`concurrently` PIDs' `ParentProcessId` chain up via
+  `Get-CimInstance Win32_Process` until hitting a PID that no longer exists,
+  then killing from that dead-ancestor's child down with `taskkill //T //F`.
+  Confirmed the process list clean (only an unrelated `tetris` project's
+  leftover `vite preview` processes remained, untouched) and no process held
+  a live connection to the Redis broker host before relaunching one fresh
+  instance of each; all three came up as a single clean generation
+  (confirmed via `Get-CimInstance` timestamps) and `runserver`'s log showed
+  real `/api/...` requests succeeding immediately after restart.
+- **The slice's own test plan — start a run, switch tabs/minimize, confirm a
+  notification fires on completion — was not performed live**, for the same
+  standing reason as every other frontend-touching entry in this file: no
+  browser-automation tool is available in this environment. Verification
+  instead rests on: `tsc`/lint/build passing, the existing unit-test suite
+  staying green, and a from-source trace of the actual `Notification`/Page
+  Visibility API semantics being relied on (permission gating, the
+  visible-and-focused check, and the mount-vs-transition edge in
+  `useNotifyOnComplete`).
+
+**Notes**
+- Deliberately scoped to the Web Notifications API only, per the slice's own
+  framing of email/webhook as "a heavier follow-up," not part of this slice.
+- `SimulationHistory.tsx` notification support (see Changes above) is a
+  reasonable next step if it turns out people mostly watch the list view
+  rather than a specific run/sweep page while waiting.
+
 ## 2026-08-04 — Slice D.1 — Accessibility audit
 
 **Slice:** D.1 — Accessibility audit

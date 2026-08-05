@@ -145,15 +145,46 @@ Motivated by finishing what the recent security/reliability pass started.
 - **Test (manual):** full keyboard-only pass through simulation creation,
   history, detail, visualisation, and compare.
 
-### Slice D.2 — Notify beyond the open tab
+### Slice D.2 — Notify beyond the open tab (Implemented)
 
 - **BE/FE:** Status push (websocket) and polling both require the page to be
   open. A long sweep or a large simulation someone kicks off and walks away
   from has no way to notify them it's done — a browser notification (Web
   Notifications API, no backend change) is the cheap first step; email/webhook
   is a heavier follow-up.
+  - No backend changes — purely client-side, per the slice's own framing.
+  - [notifications.ts](frontend/src/functions/notifications.ts): thin wrapper
+    around `Notification` (`isNotificationSupported`/`getNotificationPermission`/
+    `requestNotificationPermission`/`notify`) plus a `useNotifyOnComplete(active,
+    onComplete)` hook that fires exactly once, on the `true -> false` edge of
+    `active` (never on mount, never while it stays `true`) — mirrors this
+    codebase's existing `isRunning`/`hasActiveRuns` booleans that already drive
+    `usePollWhile` on every page that tracks a Pending/Running simulation.
+    `notify()` itself only shows a notification if permission is `granted` *and*
+    the tab isn't currently focused/visible — if the user is already looking at
+    the page, the on-page status update is enough.
+  - [NotifyToggle.tsx](frontend/src/components/NotifyToggle.tsx): shared opt-in
+    control (a button that requests permission, becoming a "we'll notify you"
+    hint once granted; renders nothing if unsupported/denied) — requesting
+    permission must happen from a user gesture (a click), so this can't be done
+    automatically.
+  - Wired into the three pages that already poll for a Pending/Running ->
+    terminal transition:
+    [MetricBasePage.tsx](frontend/src/components/MetricBasePage.tsx) (a single
+    run), [SweepResults.tsx](frontend/src/components/SweepResults.tsx) (every
+    run in a sweep reaching a terminal state), and
+    [SimulationVisualisation.tsx](frontend/src/components/SimulationVisualisation.tsx)
+    (replay becoming available). `SimulationHistory.tsx`'s list view was left
+    out — it tracks many runs at once, so "notify when any of them finishes"
+    would need per-row tracking to avoid firing repeatedly/ambiguously, a step
+    up in scope from the single-resource pages the slice's own test plan
+    describes.
 - **Test (manual):** start a run, switch tabs/minimize, confirm a
-  notification fires on completion.
+  notification fires on completion. Not performed live — no browser-automation
+  tool is available in this environment (see Slice D.1's entry in
+  implementationHistory.md for the same standing caveat); verified instead via
+  `tsc`/build/lint/test plus reading the actual `Notification`/Page Visibility
+  API semantics being relied on.
 
 ---
 

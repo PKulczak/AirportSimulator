@@ -11,6 +11,7 @@ import {
   usePost,
 } from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
+import { notify, useNotifyOnComplete } from '../functions/notifications';
 import { isDetailComplete } from '../types/metrics';
 import type { SimulationDetailResponse } from '../types/metrics';
 import type { CreateSimulationRequest, ShareLink, Simulation } from '../types/simulation';
@@ -23,6 +24,7 @@ import MetricsMovementStats from './MetricsMovementStats';
 import MetricsTimeline from './MetricsTimeline';
 import LoadingScreen from './LoadingScreen';
 import ShareLinkDialog from './ShareLinkDialog';
+import NotifyToggle from './NotifyToggle';
 import backgroundImage from '../assets/Background.png';
 
 /** e.g. "26/06/2026 12:17" — a fixed format so it doesn't depend on the
@@ -153,6 +155,20 @@ export default function MetricBasePage() {
   );
   usePollWhile(isRunning, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
 
+  // Slice D.2: alert the user even if they've switched away from this tab by
+  // the time the run finishes — fires only on the Pending/Running -> terminal
+  // transition (never on mount), and `notify()` itself no-ops without granted
+  // permission or while this tab is already focused.
+  useNotifyOnComplete(isRunning, () => {
+    if (!data) {
+      return;
+    }
+    notify(
+      data.status === 'Error' ? 'Simulation failed' : 'Simulation complete',
+      `"${data.name}" has finished.`,
+    );
+  });
+
   // A run that belongs to a sweep goes back to that sweep's results, not the
   // history home page — `data` is null in the loading/error states, so this
   // falls back to home there. Shared visitors have no sweep/history access at
@@ -223,10 +239,13 @@ export default function MetricBasePage() {
                 }
               />
               {!isError && !isCancelled && (
-                <p className="text-sm text-slate-500">
-                  This page refreshes automatically — metrics will appear as soon as the
-                  simulation completes.
-                </p>
+                <>
+                  <p className="text-sm text-slate-500">
+                    This page refreshes automatically — metrics will appear as soon as the
+                    simulation completes.
+                  </p>
+                  <NotifyToggle />
+                </>
               )}
               {!isCancelled && (
                 <Button

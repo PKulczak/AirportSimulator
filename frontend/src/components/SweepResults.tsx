@@ -14,6 +14,7 @@ import {
   usePost,
 } from '../functions/axios';
 import { useSimulationSocket } from '../functions/socket';
+import { notify, useNotifyOnComplete } from '../functions/notifications';
 import { STATUS_SEVERITY } from '../functions/statusSeverity';
 import type { BatchResults, BatchRun } from '../types/metrics';
 import type { ShareLink, SweepVariable } from '../types/simulation';
@@ -21,6 +22,7 @@ import { SWEEP_VARIABLE_OPTIONS } from '../schemas/simulationForm';
 import LineChart, { type LineChartPoint } from './LineChart';
 import LoadingScreen from './LoadingScreen';
 import ShareLinkDialog from './ShareLinkDialog';
+import NotifyToggle from './NotifyToggle';
 import backgroundImage from '../assets/Background.png';
 
 function sweptValue(run: BatchRun, variable: SweepVariable): number {
@@ -100,6 +102,13 @@ export default function SweepResults() {
     refetch,
   );
   usePollWhile(hasActiveRuns, refetch, connected ? SAFETY_POLL_INTERVAL_MS : POLL_INTERVAL_MS);
+
+  // Slice D.2: alert the user even if they've switched away from this tab by
+  // the time every run in the sweep reaches a terminal state — fires only on
+  // the has-active-runs -> none-active transition (never on mount).
+  useNotifyOnComplete(hasActiveRuns, () => {
+    notify('Sweep complete', 'All runs in your sweep have finished.');
+  });
 
   const openShare = async () => {
     setShareCopied(false);
@@ -246,6 +255,7 @@ export default function SweepResults() {
       {shareError && (
         <Message severity="error" text={`Failed to create a share link: ${shareError.message}`} />
       )}
+      {hasActiveRuns && <NotifyToggle className="text-center" />}
       <p className="text-center text-sm text-slate-600">
         Swept variable: <span className="font-semibold">{variableLabel}</span>
       </p>
